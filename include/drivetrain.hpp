@@ -1,19 +1,47 @@
+/// @file drivetrain.hpp
+///
+/// @brief Contains the Drivetrain class for autonomous control.
+
 #include "main.h"
 
 class Drivetrain {
+  /// @brief The maximum error tolerance of the PID controller.
   static constexpr double EPSILON = 0.1;
 
+  /// @brief The proportional coefficient of the PID controller.
   static constexpr double KP = 0.100;
+
+  /// @brief The integral coefficient of the PID controller.
   static constexpr double KI = 0.000;
+
+  /// @brief The derivative coefficient of the PID controller.
   static constexpr double KD = 0.000;
 
+  /// @brief The two motors on the left side of the drivetrain.
   const pros::MotorGroup left_motors;
+
+  /// @brief The two motors on the right side of the drivetrain.
   const pros::MotorGroup right_motors;
+
+  /// @brief The distance between the center of the left wheels to the center of
+  /// the right wheels.
   const double track_width;
+
+  /// @brief 1 over the wheel circumference in mm.
   const double inv_wheel_circ;
+
+  /// @brief The gear ratio of the drivetrain; the number of output gear teeth
+  /// divided by number of input gear teeth.
   const double gear_ratio;
 
+  /// @brief Returns the average rotational position of the left motors.
+  ///
+  /// @return The average rotational position of the left motors in degrees.
   double average_left_position();
+
+  /// @brief Returns the average rotational position of the right motors.
+  ///
+  /// @return The average rotational position of the right motors in degrees.
   double average_right_position();
 
  public:
