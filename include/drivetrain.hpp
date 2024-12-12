@@ -96,4 +96,12 @@ class Drivetrain {
   /// @param angle The angle to rotate in degrees. A positive angle rotates the
   /// drivetrain counter-clockwise.
   void rotate_pid(double angle);
+  
+  /// @brief Moves the robot with the given curvature radius and arc angle in
+  /// degrees using PID control.
+  ///
+  /// @param curvature_radius The curvature radius in mm. A positive curvature
+  /// radius moves the robot on a counter-clockwise arc.
+  /// @param arc_angle The arc angle in degrees.
+  void move_curve_pid(double curvature_radius, double arc_angle);
 };

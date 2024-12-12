@@ -112,3 +112,50 @@ void Drivetrain::rotate_pid(double angle) {
     right_derivative = (right_error - last_right_error) * 100;
   }
 }
+
+// FIXME: Position-based PID does not guarantee that the velocity ratio between
+// the left and right motors is correct is maintained approximately constant
+void Drivetrain::move_curve_pid(double curvature_radius, double arc_angle) {
+  left_motors.tare_position();
+  right_motors.tare_position();
+
+  // TODO: Factor in the wheel base length in the radius calculation using the
+  // Pythagorean theorem
+  const double left_radius = curvature_radius - track_width / 2;
+  const double right_radius = curvature_radius + track_width / 2;
+
+  const double left_set_point =
+      arc_angle * INV_360 * left_radius * PI * 2 * inv_wheel_circ * gear_ratio;
+  const double right_set_point =
+      arc_angle * INV_360 * right_radius * PI * 2 * inv_wheel_circ * gear_ratio;
+
+  double left_error = left_set_point - average_left_position();
+  double right_error = right_set_point - average_right_position();
+  double last_left_error = 0;
+  double last_right_error = 0;
+  double left_integral = 0;
+  double right_integral = 0;
+  double left_derivative = 0;
+  double right_derivative = 0;
+
+  while (abs(left_error) > Drivetrain::EPSILON ||
+         abs(right_error) > Drivetrain::EPSILON) {
+    left_motors.move_velocity(Drivetrain::KP * left_error +
+                              Drivetrain::KI * left_integral +
+                              Drivetrain::KD * left_derivative);
+    right_motors.move_velocity(Drivetrain::KP * right_error +
+                               Drivetrain::KI * right_integral +
+                               Drivetrain::KD * right_derivative);
+
+    pros::delay(10);
+
+    last_left_error = left_error;
+    last_right_error = right_error;
+    left_error = left_set_point - average_left_position();
+    right_error = right_set_point - average_right_position();
+    left_integral += left_error;
+    right_integral += right_error;
+    left_derivative = (left_error - last_left_error) * 100;
+    right_derivative = (right_error - last_right_error) * 100;
+  }
+}
