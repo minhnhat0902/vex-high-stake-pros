@@ -1,5 +1,7 @@
 #include "main.h"
 
+const std::int8_t CONVEYOR_PORT = 1;
+const double CONVEYOR_SPEED_PERCENT = 75.0;
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -54,4 +56,22 @@ void autonomous() {}
  * task, not resume it from where it left off.
  */
 void opcontrol() {
+  pros::Controller master(pros::E_CONTROLLER_MASTER);
+  pros::Motor conveyor(CONVEYOR_PORT);
+
+  while (true) {
+    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
+      conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+    } else {
+      conveyor.move_velocity(0);
+    }
+
+    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
+      conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+    } else {
+      conveyor.move_velocity(0);
+    }
+
+    pros::delay(20);
+  }
 }
