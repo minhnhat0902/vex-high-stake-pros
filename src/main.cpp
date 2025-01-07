@@ -7,14 +7,20 @@ const std::initializer_list<std::int8_t> LEFT_MOTORS_PORT = {-1, -2};
 /// @brief Right motors port numbers.
 const std::initializer_list<std::int8_t> RIGHT_MOTORS_PORT = {3, 4};
 
+/// @brief Intake motor port number.
+const std::int8_t INTAKE_PORT = -6;
+
+/// @brief Conveyor motor port number.
+const std::int8_t CONVEYOR_PORT = -7;
+
 /// @brief Piston three-wire port letter.
 const std::int8_t PISTON_PORT = 'a';
 
 /// @brief Bumper three-wire port letter.
 const std::int8_t BUMPER_PORT = 'b';
 
-const std::int8_t CONVEYOR_PORT = 1;
-const double CONVEYOR_SPEED_PERCENT = 75.0;
+/// @brief The speed of the conveyor as a percentage of its max speed (200 rpm).
+const double CONVEYOR_SPEED_PERCENT = 75;
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -72,6 +78,7 @@ void opcontrol() {
   pros::Controller master(pros::E_CONTROLLER_MASTER);
   pros::MotorGroup left_motors(LEFT_MOTORS_PORT);
   pros::MotorGroup right_motors(RIGHT_MOTORS_PORT);
+  pros::Motor intake(INTAKE_PORT);
   pros::Motor conveyor(CONVEYOR_PORT);
   pros::ADIDigitalOut piston(PISTON_PORT);
   pros::ADIDigitalIn bumper(BUMPER_PORT);
@@ -94,6 +101,14 @@ void opcontrol() {
       conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
     } else {
       conveyor.move_velocity(0);
+    }
+
+    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
+      intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+    } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
+      intake.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+    } else {
+      intake.move_velocity(0);
     }
 
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
