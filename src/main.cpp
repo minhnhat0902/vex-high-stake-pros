@@ -90,11 +90,7 @@ void opcontrol() {
 
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
       conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
-    } else {
-      conveyor.move_velocity(0);
-    }
-
-    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
+    } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
       conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
     } else {
       conveyor.move_velocity(0);
