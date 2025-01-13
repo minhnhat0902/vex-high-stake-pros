@@ -95,20 +95,15 @@ void opcontrol() {
     pros::screen::erase();
     pros::screen::set_pen(0x000000);
 
-    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
-      conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
-    } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
-      conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
-    } else {
-      conveyor.move_velocity(0);
-    }
-
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
       intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+      conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
     } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
       intake.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+      conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
     } else {
       intake.move_velocity(0);
+      conveyor.move_velocity(0);
     }
 
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
