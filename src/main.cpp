@@ -20,7 +20,7 @@ const std::int8_t PISTON_PORT = 'a';
 const std::int8_t BUMPER_PORT = 'b';
 
 /// @brief The speed of the conveyor as a percentage of its max speed (200 rpm).
-const double CONVEYOR_SPEED_PERCENT = 75;
+const double CONVEYOR_SPEED_PERCENT = 100;
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
