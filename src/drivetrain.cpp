@@ -21,7 +21,7 @@ double Drivetrain::average_right_position() {
 }
 
 void Drivetrain::move(double distance) {
-  int spin_distance = distance * inv_wheel_circ * gear_ratio;
+  double spin_distance = distance * inv_wheel_circ * 360 * gear_ratio;
   left_motors.move_relative(spin_distance, 140);
   right_motors.move_relative(spin_distance, 140);
 
@@ -29,7 +29,7 @@ void Drivetrain::move(double distance) {
 }
 
 void Drivetrain::rotate(double angle) {
-  int spin_distance =
+  double spin_distance =
       angle * INV_360 * track_width * PI * inv_wheel_circ * gear_ratio;
 
   left_motors.move_relative(-spin_distance, 140);
@@ -42,7 +42,7 @@ void Drivetrain::move_pid(double distance) {
   left_motors.tare_position();
   right_motors.tare_position();
 
-  const double set_point = distance * inv_wheel_circ * gear_ratio;
+  const double set_point = distance * inv_wheel_circ * 360 * gear_ratio;
 
   double left_error = set_point - average_left_position();
   double right_error = set_point - average_right_position();
@@ -62,7 +62,7 @@ void Drivetrain::move_pid(double distance) {
                                Drivetrain::KI * right_integral +
                                Drivetrain::KD * right_derivative);
 
-    pros::delay(10);
+    pros::delay(20);
 
     last_left_error = left_error;
     last_right_error = right_error;
@@ -70,9 +70,12 @@ void Drivetrain::move_pid(double distance) {
     right_error = set_point - average_right_position();
     left_integral += left_error;
     right_integral += right_error;
-    left_derivative = (left_error - last_left_error) * 100;
-    right_derivative = (right_error - last_right_error) * 100;
+    left_derivative = (left_error - last_left_error) * 50;
+    right_derivative = (right_error - last_right_error) * 50;
   }
+
+  left_motors.move_velocity(0);
+  right_motors.move_velocity(0);
 }
 
 void Drivetrain::rotate_pid(double angle) {
@@ -100,7 +103,7 @@ void Drivetrain::rotate_pid(double angle) {
                                Drivetrain::KI * right_integral +
                                Drivetrain::KD * right_derivative);
 
-    pros::delay(10);
+    pros::delay(20);
 
     last_left_error = left_error;
     last_right_error = right_error;
@@ -108,9 +111,12 @@ void Drivetrain::rotate_pid(double angle) {
     right_error = set_point - average_right_position();
     left_integral += left_error;
     right_integral += right_error;
-    left_derivative = (left_error - last_left_error) * 100;
-    right_derivative = (right_error - last_right_error) * 100;
+    left_derivative = (left_error - last_left_error) * 50;
+    right_derivative = (right_error - last_right_error) * 50;
   }
+
+  left_motors.move_velocity(0);
+  right_motors.move_velocity(0);
 }
 
 // FIXME: Position-based PID does not guarantee that the velocity ratio between
@@ -125,9 +131,9 @@ void Drivetrain::move_curve_pid(double curvature_radius, double arc_angle) {
   const double right_radius = curvature_radius + track_width / 2;
 
   const double left_set_point =
-      arc_angle * INV_360 * left_radius * PI * 2 * inv_wheel_circ * gear_ratio;
+      arc_angle * left_radius * PI * 2 * inv_wheel_circ * gear_ratio;
   const double right_set_point =
-      arc_angle * INV_360 * right_radius * PI * 2 * inv_wheel_circ * gear_ratio;
+      arc_angle * right_radius * PI * 2 * inv_wheel_circ * gear_ratio;
 
   double left_error = left_set_point - average_left_position();
   double right_error = right_set_point - average_right_position();
@@ -158,4 +164,7 @@ void Drivetrain::move_curve_pid(double curvature_radius, double arc_angle) {
     left_derivative = (left_error - last_left_error) * 100;
     right_derivative = (right_error - last_right_error) * 100;
   }
+
+  left_motors.move_velocity(0);
+  right_motors.move_velocity(0);
 }
