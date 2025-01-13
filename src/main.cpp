@@ -9,19 +9,7 @@ const double TRACK_WIDTH = 357.0;
 const double WHEEL_CIRC = 262.0;
 
 /// @brief Number of output gear teeth divided by number of input gear teeth.
-const double GEAR_RATIO = 36 / 60;
-
-/// @brief Left motors port numbers, with the negative sign to reverse them.
-const std::initializer_list<std::int8_t> LEFT_MOTORS_PORT = {-1, -2};
-
-/// @brief Right motors port numbers.
-const std::initializer_list<std::int8_t> RIGHT_MOTORS_PORT = {3, 4};
-
-/// @brief Piston three-wire port letter.
-const std::int8_t PISTON_PORT = 'a';
-
-/// @brief Bumper three-wire port letter.
-const std::int8_t BUMPER_PORT = 'b';
+const double GEAR_RATIO = 36.0 / 60.0;
 
 /// @brief Left motors port numbers, with the negative sign to reverse them.
 const std::initializer_list<std::int8_t> LEFT_MOTORS_PORT = {-1, -2};
