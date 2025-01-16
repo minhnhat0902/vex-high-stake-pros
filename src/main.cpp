@@ -146,9 +146,11 @@ void opcontrol() {
   while (true) {
     // Arcade control scheme
     left_motors.move(
-        master.get_analog(ANALOG_LEFT_Y));  // Sets left motor voltage
+        int(pow(double(master.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) *
+            127));  // Sets left motor voltage
     right_motors.move(
-        master.get_analog(ANALOG_RIGHT_Y));  // Sets right motor voltage
+        int(pow(double(master.get_analog(ANALOG_RIGHT_Y)) / 127, 3.0) *
+            127));  // Sets right motor voltage
 
     pros::screen::erase();
     pros::screen::set_pen(0xffffff);
