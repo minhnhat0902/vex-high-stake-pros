@@ -1,6 +1,5 @@
 #include "main.h"
 
-
 /// @brief Left motors port numbers, with the negative sign to reverse them.
 const std::initializer_list<std::int8_t> LEFT_MOTORS_PORT = {-1, -2};
 
@@ -13,6 +12,12 @@ const std::int8_t INTAKE_PORT = -6;
 /// @brief Conveyor motor port number.
 const std::int8_t CONVEYOR_PORT = -7;
 
+/// @brief Ladybrown motor port number.
+const std::int8_t LADYBROWN_PORT = 9;
+
+/// @brief Port number for the vision sensor
+const uint8_t VISION_PORT = 8;
+
 /// @brief Piston three-wire port letter.
 const std::int8_t PISTON_PORT = 'a';
 
@@ -20,7 +25,41 @@ const std::int8_t PISTON_PORT = 'a';
 const std::int8_t BUMPER_PORT = 'b';
 
 /// @brief The speed of the conveyor as a percentage of its max speed (200 rpm).
-const double CONVEYOR_SPEED_PERCENT = 75;
+const double CONVEYOR_SPEED_PERCENT = 100;
+
+/// @brief The speed of the ladybrown as a percentage of its max speed (200
+/// rpm).
+const double LADYBROWN_SPEED_PERCENT = 50;
+
+/// @brief Vision sensor signature ID for the red donut
+const uint32_t RED_SIG_ID = 1;
+
+/// @brief Vision sensor signature ID for the blue donut
+const uint32_t BLUE_SIG_ID = 2;
+
+/// @brief Delay in ms for the conveyor to stop after a donut of the wrong color
+/// is detected
+const uint32_t CONVEYOR_DELAY = 350;
+
+/// @brief Delay in ms for the conveyor to start after ejecting a donut of the
+/// wrong color
+const uint16_t CONVEYOR_HALT = 200;
+
+/// @brief Distance in degrees for the conveyor to move after a donut of the
+/// wrong color is detected.
+const double CONVEYOR_STOP_DISTANCE = 770;
+
+/// @brief Minimum screen coverage for the donut to be detected using the vision
+/// sensor
+const int MIN_SCREEN_COVERAGE = 100;
+
+/// @brief Enum for the colors of the donuts
+enum class DONUT_COLOR { RED, BLUE };
+
+/// @brief Enum for motor spinning states
+enum class SPIN_STATE { STOP, FORWARD, REVERSE };
+
+enum class SORTING_STATE { NOT_DETECTED, STANDBY, STOP };
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -28,7 +67,7 @@ const double CONVEYOR_SPEED_PERCENT = 75;
  * All other competition modes are blocked by initialize; it is recommended
  * to keep execution time for this mode under a few seconds.
  */
-void initialize() { pros::screen::set_eraser(0xffffff); }
+void initialize() { pros::screen::set_eraser(0x000000); }
 
 /**
  * Runs while the robot is in the disabled state of Field Management System or
@@ -80,35 +119,65 @@ void opcontrol() {
   pros::MotorGroup right_motors(RIGHT_MOTORS_PORT);
   pros::Motor intake(INTAKE_PORT);
   pros::Motor conveyor(CONVEYOR_PORT);
+  pros::Motor ladybrown(LADYBROWN_PORT);
+  pros::Vision vision_sensor(VISION_PORT);
   pros::ADIDigitalOut piston(PISTON_PORT);
   pros::ADIDigitalIn bumper(BUMPER_PORT);
 
+  int frame_counter = 0;
+
   bool retracted = false;
+  SORTING_STATE sorting_state = SORTING_STATE::NOT_DETECTED;
+  SPIN_STATE conveyor_state = SPIN_STATE::STOP;
+
+  auto RED_SIG = pros::Vision::signature_from_utility(
+      RED_SIG_ID, 3797, 11657, 7727, -2281, -1609, -1945, 1.5, 0);
+  auto BLUE_SIG = pros::Vision::signature_from_utility(
+      BLUE_SIG_ID, -4477, -3539, -4008, 51, 4449, 2250, 2.6, 0);
+
+  vision_sensor.set_signature(RED_SIG_ID, &RED_SIG);
+  vision_sensor.set_signature(BLUE_SIG_ID, &BLUE_SIG);
+
+  DONUT_COLOR scoring_color = DONUT_COLOR::BLUE;
+  pros::vision_object_s_t visible_donut;
+
+  ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_BRAKE);
 
   while (true) {
     // Arcade control scheme
     left_motors.move(
-        master.get_analog(ANALOG_LEFT_Y));  // Sets left motor voltage
+        int(pow(double(master.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) *
+            127));  // Sets left motor voltage
     right_motors.move(
-        master.get_analog(ANALOG_RIGHT_Y));  // Sets right motor voltage
+        int(pow(double(master.get_analog(ANALOG_RIGHT_Y)) / 127, 3.0) *
+            127));  // Sets right motor voltage
 
     pros::screen::erase();
-    pros::screen::set_pen(0x000000);
+    pros::screen::set_pen(0xffffff);
 
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
-      conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+      ladybrown.move_velocity(2 * LADYBROWN_SPEED_PERCENT);
     } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
-      conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+      ladybrown.move_velocity(-2 * LADYBROWN_SPEED_PERCENT);
     } else {
-      conveyor.move_velocity(0);
+      ladybrown.move_velocity(0);
     }
 
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
       intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+      conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+
+      conveyor_state = SPIN_STATE::FORWARD;
     } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
       intake.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+      conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+
+      conveyor_state = SPIN_STATE::REVERSE;
     } else {
       intake.move_velocity(0);
+      conveyor.move_velocity(0);
+
+      conveyor_state = SPIN_STATE::STOP;
     }
 
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
@@ -123,15 +192,50 @@ void opcontrol() {
       }
     }
 
-    if (bumper.get_value()) {
-      pros::screen::print(pros::E_TEXT_MEDIUM, 3, "Clicked!");
-      // piston.set_value(false);
-      // pros::delay(1000);
-      // piston.set_value(true);
-    } else {
-      pros::screen::print(pros::E_TEXT_MEDIUM, 3, "Not clicked!");
+    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+      if (scoring_color == DONUT_COLOR::RED) {
+        scoring_color = DONUT_COLOR::BLUE;
+        pros::delay(200);
+      } else {
+        scoring_color = DONUT_COLOR::RED;
+        pros::delay(200);
+      }
     }
 
+    if (conveyor_state == SPIN_STATE::FORWARD) {
+      switch (sorting_state) {
+        case SORTING_STATE::NOT_DETECTED:
+          visible_donut = vision_sensor.get_by_sig(
+              0, scoring_color == DONUT_COLOR::RED ? BLUE_SIG_ID : RED_SIG_ID);
+
+          if (visible_donut.height >= MIN_SCREEN_COVERAGE) {
+            sorting_state = SORTING_STATE::STANDBY;
+            conveyor.tare_position();
+          }
+          break;
+
+        case SORTING_STATE::STANDBY:
+          if (conveyor.get_position() >= CONVEYOR_STOP_DISTANCE) {
+            conveyor.move_velocity(0);
+            sorting_state = SORTING_STATE::STOP;
+            pros::delay(CONVEYOR_HALT);
+          }
+          break;
+
+        default:
+          conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+      }
+    } else {
+      sorting_state = SORTING_STATE::NOT_DETECTED;
+    }
+
+    if (!(frame_counter % 10)) {
+      master.clear();
+      master.print(0, 0, "Score: %s",
+                   scoring_color == DONUT_COLOR::RED ? "RED" : "BLUE");
+    }
+
+    frame_counter++;
     pros::delay(20);  // Run for 20 ms then update
   }
 }
