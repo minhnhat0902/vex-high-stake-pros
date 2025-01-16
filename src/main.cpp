@@ -12,6 +12,9 @@ const std::int8_t INTAKE_PORT = -6;
 /// @brief Conveyor motor port number.
 const std::int8_t CONVEYOR_PORT = -7;
 
+/// @brief Ladybrown motor port number.
+const std::int8_t LADYBROWN_PORT = 9;
+
 /// @brief Port number for the vision sensor
 const uint8_t VISION_PORT = 8;
 
@@ -23,6 +26,10 @@ const std::int8_t BUMPER_PORT = 'b';
 
 /// @brief The speed of the conveyor as a percentage of its max speed (200 rpm).
 const double CONVEYOR_SPEED_PERCENT = 100;
+
+/// @brief The speed of the ladybrown as a percentage of its max speed (200
+/// rpm).
+const double LADYBROWN_SPEED_PERCENT = 50;
 
 /// @brief Vision sensor signature ID for the red donut
 const uint32_t RED_SIG_ID = 1;
@@ -112,6 +119,7 @@ void opcontrol() {
   pros::MotorGroup right_motors(RIGHT_MOTORS_PORT);
   pros::Motor intake(INTAKE_PORT);
   pros::Motor conveyor(CONVEYOR_PORT);
+  pros::Motor ladybrown(LADYBROWN_PORT);
   pros::Vision vision_sensor(VISION_PORT);
   pros::ADIDigitalOut piston(PISTON_PORT);
   pros::ADIDigitalIn bumper(BUMPER_PORT);
@@ -133,6 +141,8 @@ void opcontrol() {
   DONUT_COLOR scoring_color = DONUT_COLOR::BLUE;
   pros::vision_object_s_t visible_donut;
 
+  ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_BRAKE);
+
   while (true) {
     // Arcade control scheme
     left_motors.move(
@@ -142,6 +152,14 @@ void opcontrol() {
 
     pros::screen::erase();
     pros::screen::set_pen(0xffffff);
+
+    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
+      ladybrown.move_velocity(2 * LADYBROWN_SPEED_PERCENT);
+    } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
+      ladybrown.move_velocity(-2 * LADYBROWN_SPEED_PERCENT);
+    } else {
+      ladybrown.move_velocity(0);
+    }
 
     if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
       intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
