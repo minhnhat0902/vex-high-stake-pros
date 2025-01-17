@@ -121,8 +121,8 @@ void opcontrol() {
   pros::Motor conveyor(CONVEYOR_PORT);
   pros::Motor ladybrown(LADYBROWN_PORT);
   pros::Vision vision_sensor(VISION_PORT);
-  pros::ADIDigitalOut piston(PISTON_PORT);
-  pros::ADIDigitalIn bumper(BUMPER_PORT);
+  pros::adi::DigitalOut piston(PISTON_PORT);
+  pros::adi::DigitalIn bumper(BUMPER_PORT);
 
   int frame_counter = 0;
 
