@@ -53,6 +53,32 @@ const double CONVEYOR_STOP_DISTANCE = 770;
 /// sensor.
 const int MIN_SCREEN_COVERAGE = 100;
 
+/// @brief Gear ratio for the conveyor motor.
+const double CONVEYOR_GEAR_RATIO = 12.0 / 18.0;
+
+/// @brief Number of teeth in the conveyor output sprocket.
+const int CONVEYOR_OUT_TEETH = 12;
+
+/// @brief Number of links in the conveyor.
+const int CONVEYOR_LINKS = 74;
+
+/// @brief Offset in links between the first and second conveyor hooks.
+const int CONVEYOR_HOOK_2_OFFSET = 31;
+
+/// @brief Number of motor degrees for the conveyor to make a full revolution.
+const double CONVEYOR_REVOLUTION_DEGREES = double(CONVEYOR_LINKS) /
+                                           double(CONVEYOR_OUT_TEETH) * 360.0 *
+                                           CONVEYOR_GEAR_RATIO;
+
+/// @brief Offset in degrees between the first and second conveyor hook.
+const double CONVEYOR_HOOK_2_OFFSET_DEGREES = double(CONVEYOR_HOOK_2_OFFSET) /
+                                              double(CONVEYOR_OUT_TEETH) *
+                                              360.0 * CONVEYOR_GEAR_RATIO;
+
+/// @brief Distance in conveyor motor degrees between the vision sensor and the
+/// top of the conveyor.
+const double DISTANCE_VISION_TO_TOP = 520;
+
 /// @brief Enum for the colors of the donuts.
 enum class DONUT_COLOR { RED, BLUE };
 
@@ -141,7 +167,9 @@ void opcontrol() {
 
   DONUT_COLOR scoring_color = DONUT_COLOR::BLUE;
   pros::vision_object_s_t visible_donut;
+  double conveyor_stop_target = 0;
 
+  conveyor.tare_position();
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_BRAKE);
 
   while (true) {
@@ -211,12 +239,32 @@ void opcontrol() {
 
           if (visible_donut.height >= MIN_SCREEN_COVERAGE) {
             sorting_state = SORTING_STATE::STANDBY;
-            conveyor.tare_position();
+            double conveyor_position = conveyor.get_position();
+            int conveyor_revs =
+                int(conveyor_position / CONVEYOR_REVOLUTION_DEGREES);
+            double conveyor_offset =
+                conveyor_position - conveyor_revs * CONVEYOR_REVOLUTION_DEGREES;
+            double hook_offset = conveyor_offset + DISTANCE_VISION_TO_TOP;
+            double closest_offset = std::abs(hook_offset);
+
+            int detected_hook = 1;
+
+            if (std::abs(hook_offset + CONVEYOR_HOOK_2_OFFSET_DEGREES) >
+                closest_offset) {
+              detected_hook = 2;
+            }
+
+            conveyor_stop_target =
+                (conveyor_revs + 1) * CONVEYOR_REVOLUTION_DEGREES;
+
+            if (detected_hook == 2) {
+              conveyor_stop_target += CONVEYOR_HOOK_2_OFFSET_DEGREES;
+            }
           }
           break;
 
         case SORTING_STATE::STANDBY:
-          if (conveyor.get_position() >= CONVEYOR_STOP_DISTANCE) {
+          if (conveyor.get_position() >= conveyor_stop_target) {
             conveyor.move_velocity(0);
             sorting_state = SORTING_STATE::STOP;
             pros::delay(CONVEYOR_HALT);
@@ -228,6 +276,7 @@ void opcontrol() {
       }
     } else {
       sorting_state = SORTING_STATE::NOT_DETECTED;
+      conveyor_stop_target = 0;
     }
 
     if (!(frame_counter % 10)) {
