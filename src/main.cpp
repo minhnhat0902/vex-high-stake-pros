@@ -1,5 +1,17 @@
 #include "main.h"
 
+#include "drivetrain.hpp"
+#include "lemlib/api.hpp"  // IWYU pragma: keep
+
+/// @brief Track width in mm.
+const double TRACK_WIDTH = 357.0;
+
+/// @brief Wheel circumference in mm.
+const double WHEEL_CIRC = 262.0;
+
+/// @brief Number of output gear teeth divided by number of input gear teeth.
+const double GEAR_RATIO = 36.0 / 60.0;
+
 /// @brief Left motors port numbers, with the negative sign to reverse them.
 const std::initializer_list<std::int8_t> LEFT_MOTORS_PORT = {-1, -2};
 
@@ -125,7 +137,14 @@ void competition_initialize() {}
  * will be stopped. Re-enabling the robot will restart the task, not re-start it
  * from where it left off.
  */
-void autonomous() {}
+void autonomous() {
+  Drivetrain drivetrain(LEFT_MOTORS_PORT, RIGHT_MOTORS_PORT, TRACK_WIDTH,
+                        WHEEL_CIRC, GEAR_RATIO);
+
+  drivetrain.move_pid(600);
+  drivetrain.rotate_pid(90);
+  drivetrain.move_pid(-600);
+}
 
 /**
  * Runs the operator control code. This function will be started in its own task
