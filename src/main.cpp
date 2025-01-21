@@ -231,9 +231,8 @@ void opcontrol() {
     }
 
     if (!(frame_counter % 10)) {
-      master.clear();
       master.print(0, 0, "Score: %s",
-                   scoring_color == DONUT_COLOR::RED ? "RED" : "BLUE");
+                   scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
     }
 
     frame_counter++;
