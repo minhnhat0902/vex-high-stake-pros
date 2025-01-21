@@ -15,7 +15,7 @@ const std::int8_t CONVEYOR_PORT = -7;
 /// @brief Ladybrown motor port number.
 const std::int8_t LADYBROWN_PORT = 9;
 
-/// @brief Port number for the vision sensor
+/// @brief Port number for the vision sensor.
 const uint8_t VISION_PORT = 8;
 
 /// @brief Piston three-wire port letter.
@@ -29,20 +29,20 @@ const double CONVEYOR_SPEED_PERCENT = 100;
 
 /// @brief The speed of the ladybrown as a percentage of its max speed (200
 /// rpm).
-const double LADYBROWN_SPEED_PERCENT = 50;
+const double LADYBROWN_SPEED_PERCENT = 75;
 
-/// @brief Vision sensor signature ID for the red donut
+/// @brief Vision sensor signature ID for the red donut.
 const uint32_t RED_SIG_ID = 1;
 
-/// @brief Vision sensor signature ID for the blue donut
+/// @brief Vision sensor signature ID for the blue donut.
 const uint32_t BLUE_SIG_ID = 2;
 
 /// @brief Delay in ms for the conveyor to stop after a donut of the wrong color
-/// is detected
+/// is detected.
 const uint32_t CONVEYOR_DELAY = 350;
 
 /// @brief Delay in ms for the conveyor to start after ejecting a donut of the
-/// wrong color
+/// wrong color.
 const uint16_t CONVEYOR_HALT = 200;
 
 /// @brief Distance in degrees for the conveyor to move after a donut of the
@@ -50,15 +50,42 @@ const uint16_t CONVEYOR_HALT = 200;
 const double CONVEYOR_STOP_DISTANCE = 770;
 
 /// @brief Minimum screen coverage for the donut to be detected using the vision
-/// sensor
+/// sensor.
 const int MIN_SCREEN_COVERAGE = 100;
 
-/// @brief Enum for the colors of the donuts
+/// @brief Gear ratio for the conveyor motor.
+const double CONVEYOR_GEAR_RATIO = 12.0 / 18.0;
+
+/// @brief Number of teeth in the conveyor output sprocket.
+const int CONVEYOR_OUT_TEETH = 12;
+
+/// @brief Number of links in the conveyor.
+const int CONVEYOR_LINKS = 74;
+
+/// @brief Offset in links between the first and second conveyor hooks.
+const int CONVEYOR_HOOK_2_OFFSET = 31;
+
+/// @brief Number of motor degrees for the conveyor to make a full revolution.
+const double CONVEYOR_REVOLUTION_DEGREES = double(CONVEYOR_LINKS) /
+                                           double(CONVEYOR_OUT_TEETH) * 360.0 *
+                                           CONVEYOR_GEAR_RATIO;
+
+/// @brief Offset in degrees between the first and second conveyor hook.
+const double CONVEYOR_HOOK_2_OFFSET_DEGREES = double(CONVEYOR_HOOK_2_OFFSET) /
+                                              double(CONVEYOR_OUT_TEETH) *
+                                              360.0 * CONVEYOR_GEAR_RATIO;
+
+/// @brief Distance in conveyor motor degrees between the vision sensor and the
+/// top of the conveyor.
+const double DISTANCE_VISION_TO_TOP = 520;
+
+/// @brief Enum for the colors of the donuts.
 enum class DONUT_COLOR { RED, BLUE };
 
-/// @brief Enum for motor spinning states
+/// @brief Enum for motor spinning states.
 enum class SPIN_STATE { STOP, FORWARD, REVERSE };
 
+/// @brief Enum for donut color sorting states.
 enum class SORTING_STATE { NOT_DETECTED, STANDBY, STOP };
 
 /**
@@ -140,8 +167,10 @@ void opcontrol() {
 
   DONUT_COLOR scoring_color = DONUT_COLOR::BLUE;
   pros::vision_object_s_t visible_donut;
+  double conveyor_stop_target = 0;
 
-  ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_BRAKE);
+  conveyor.tare_position();
+  ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 
   while (true) {
     // Arcade control scheme
@@ -210,12 +239,32 @@ void opcontrol() {
 
           if (visible_donut.height >= MIN_SCREEN_COVERAGE) {
             sorting_state = SORTING_STATE::STANDBY;
-            conveyor.tare_position();
+            double conveyor_position = conveyor.get_position();
+            int conveyor_revs =
+                int(conveyor_position / CONVEYOR_REVOLUTION_DEGREES);
+            double conveyor_offset =
+                conveyor_position - conveyor_revs * CONVEYOR_REVOLUTION_DEGREES;
+            double hook_offset = conveyor_offset + DISTANCE_VISION_TO_TOP;
+            double closest_offset = std::abs(hook_offset);
+
+            int detected_hook = 1;
+
+            if (std::abs(hook_offset + CONVEYOR_HOOK_2_OFFSET_DEGREES) >
+                closest_offset) {
+              detected_hook = 2;
+            }
+
+            conveyor_stop_target =
+                (conveyor_revs + 1) * CONVEYOR_REVOLUTION_DEGREES;
+
+            if (detected_hook == 2) {
+              conveyor_stop_target += CONVEYOR_HOOK_2_OFFSET_DEGREES;
+            }
           }
           break;
 
         case SORTING_STATE::STANDBY:
-          if (conveyor.get_position() >= CONVEYOR_STOP_DISTANCE) {
+          if (conveyor.get_position() >= conveyor_stop_target) {
             conveyor.move_velocity(0);
             sorting_state = SORTING_STATE::STOP;
             pros::delay(CONVEYOR_HALT);
@@ -227,12 +276,12 @@ void opcontrol() {
       }
     } else {
       sorting_state = SORTING_STATE::NOT_DETECTED;
+      conveyor_stop_target = 0;
     }
 
     if (!(frame_counter % 10)) {
-      master.clear();
       master.print(0, 0, "Score: %s",
-                   scoring_color == DONUT_COLOR::RED ? "RED" : "BLUE");
+                   scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
     }
 
     frame_counter++;
