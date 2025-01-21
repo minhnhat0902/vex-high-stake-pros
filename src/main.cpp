@@ -15,7 +15,7 @@ const std::int8_t CONVEYOR_PORT = -7;
 /// @brief Ladybrown motor port number.
 const std::int8_t LADYBROWN_PORT = 9;
 
-/// @brief Port number for the vision sensor
+/// @brief Port number for the vision sensor.
 const uint8_t VISION_PORT = 8;
 
 /// @brief Piston three-wire port letter.
@@ -31,18 +31,18 @@ const double CONVEYOR_SPEED_PERCENT = 100;
 /// rpm).
 const double LADYBROWN_SPEED_PERCENT = 50;
 
-/// @brief Vision sensor signature ID for the red donut
+/// @brief Vision sensor signature ID for the red donut.
 const uint32_t RED_SIG_ID = 1;
 
-/// @brief Vision sensor signature ID for the blue donut
+/// @brief Vision sensor signature ID for the blue donut.
 const uint32_t BLUE_SIG_ID = 2;
 
 /// @brief Delay in ms for the conveyor to stop after a donut of the wrong color
-/// is detected
+/// is detected.
 const uint32_t CONVEYOR_DELAY = 350;
 
 /// @brief Delay in ms for the conveyor to start after ejecting a donut of the
-/// wrong color
+/// wrong color.
 const uint16_t CONVEYOR_HALT = 200;
 
 /// @brief Distance in degrees for the conveyor to move after a donut of the
@@ -50,15 +50,16 @@ const uint16_t CONVEYOR_HALT = 200;
 const double CONVEYOR_STOP_DISTANCE = 770;
 
 /// @brief Minimum screen coverage for the donut to be detected using the vision
-/// sensor
+/// sensor.
 const int MIN_SCREEN_COVERAGE = 100;
 
-/// @brief Enum for the colors of the donuts
+/// @brief Enum for the colors of the donuts.
 enum class DONUT_COLOR { RED, BLUE };
 
-/// @brief Enum for motor spinning states
+/// @brief Enum for motor spinning states.
 enum class SPIN_STATE { STOP, FORWARD, REVERSE };
 
+/// @brief Enum for donut color sorting states.
 enum class SORTING_STATE { NOT_DETECTED, STANDBY, STOP };
 
 /**
