@@ -30,8 +30,11 @@ const std::int8_t LADYBROWN_PORT = 9;
 /// @brief Port number for the vision sensor.
 const uint8_t VISION_PORT = 8;
 
+/// @brief Potentiometer three-wire port letter.
+const std::int8_t POTENTIOMETER_PORT = 'a';
+
 /// @brief Piston three-wire port letter.
-const std::int8_t PISTON_PORT = 'a';
+const std::int8_t PISTON_PORT = 'b';
 
 /// @brief The speed of the conveyor as a percentage of its max speed (200 rpm).
 const double CONVEYOR_SPEED_PERCENT = 100;
@@ -87,6 +90,16 @@ const double CONVEYOR_HOOK_2_OFFSET_DEGREES = double(CONVEYOR_HOOK_2_OFFSET) /
 /// @brief Distance in conveyor motor degrees between the vision sensor and the
 /// top of the conveyor.
 const double DISTANCE_VISION_TO_TOP = 520;
+
+/// @brief Position of the ladybrown at the top of the conveyor for pickup, in
+/// potentiometer units.
+const int LADYBROWN_PICKUP_POSITION = 1060;
+
+/// @brief Acceptable error in the ladybrown position.
+const int LADYBROWN_EPSILON = 20;
+
+/// @brief The proportional coefficient of the ladybrown PID controller.
+const double LADYBROWN_K_P = 0.1;
 
 /// @brief Enum for the colors of the donuts.
 enum class DONUT_COLOR { RED, BLUE };
@@ -165,6 +178,7 @@ void opcontrol() {
   pros::Motor ladybrown(LADYBROWN_PORT);
   pros::Vision vision_sensor(VISION_PORT);
   pros::adi::DigitalOut piston(PISTON_PORT);
+  pros::adi::AnalogIn potentiometer(POTENTIOMETER_PORT);
 
   int frame_counter = 0;
 
@@ -184,8 +198,11 @@ void opcontrol() {
   pros::vision_object_s_t visible_donut;
   double conveyor_stop_target = 0;
 
+  bool ladybrown_snapping = false;
+
   conveyor.tare_position();
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
+  potentiometer.calibrate();
 
   while (true) {
     // Arcade control scheme
@@ -246,6 +263,11 @@ void opcontrol() {
       }
     }
 
+    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_X)) {
+      ladybrown_snapping = true;
+      pros::delay(200);
+    }
+
     if (conveyor_state == SPIN_STATE::FORWARD) {
       switch (sorting_state) {
         case SORTING_STATE::NOT_DETECTED:
@@ -294,9 +316,23 @@ void opcontrol() {
       conveyor_stop_target = 0;
     }
 
+    if (ladybrown_snapping) {
+      int ladybrown_error =
+          potentiometer.get_value_calibrated() - LADYBROWN_PICKUP_POSITION;
+      if (std::abs(ladybrown_error) < LADYBROWN_EPSILON) {
+        ladybrown_snapping = false;
+        ladybrown.move_velocity(0);
+      } else {
+        ladybrown.move_velocity(-2 * LADYBROWN_SPEED_PERCENT * ladybrown_error *
+                                LADYBROWN_K_P);
+      }
+    }
+
     if (!(frame_counter % 10)) {
-      master.print(0, 0, "Score: %s",
-                   scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
+      // master.print(0, 0, "Score: %s",
+      //              scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
+      master.print(0, 0, "%d",
+                   potentiometer.get_value());
     }
 
     frame_counter++;
