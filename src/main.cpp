@@ -33,9 +33,6 @@ const uint8_t VISION_PORT = 8;
 /// @brief Piston three-wire port letter.
 const std::int8_t PISTON_PORT = 'a';
 
-/// @brief Bumper three-wire port letter.
-const std::int8_t BUMPER_PORT = 'b';
-
 /// @brief The speed of the conveyor as a percentage of its max speed (200 rpm).
 const double CONVEYOR_SPEED_PERCENT = 100;
 
@@ -168,7 +165,6 @@ void opcontrol() {
   pros::Motor ladybrown(LADYBROWN_PORT);
   pros::Vision vision_sensor(VISION_PORT);
   pros::adi::DigitalOut piston(PISTON_PORT);
-  pros::adi::DigitalIn bumper(BUMPER_PORT);
 
   int frame_counter = 0;
 
