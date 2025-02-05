@@ -31,6 +31,9 @@ const std::int8_t LADYBROWN_PORT = 9;
 /// @brief Port number for the vision sensor.
 const uint8_t VISION_PORT = 8;
 
+/// @brief Port number for the inertial sensor
+const uint8_t INERTIAL_PORT = 13;
+
 /// @brief Potentiometer three-wire port letter.
 const std::int8_t POTENTIOMETER_PORT = 'a';
 
@@ -111,13 +114,123 @@ enum class SPIN_STATE { STOP, FORWARD, REVERSE };
 /// @brief Enum for donut color sorting states.
 enum class SORTING_STATE { NOT_DETECTED, STANDBY, STOP };
 
+// Initializing the controller, motors and sensors.
+pros::Controller controller(pros::E_CONTROLLER_MASTER);
+pros::MotorGroup left_motors(LEFT_MOTORS_PORT);
+pros::MotorGroup right_motors(RIGHT_MOTORS_PORT);
+pros::Motor intake(INTAKE_PORT);
+pros::Motor conveyor(CONVEYOR_PORT);
+pros::Motor ladybrown(LADYBROWN_PORT);
+pros::Vision vision_sensor(VISION_PORT);
+pros::Imu imu(INERTIAL_PORT);
+pros::adi::DigitalOut piston(PISTON_PORT);
+pros::adi::AnalogIn potentiometer(POTENTIOMETER_PORT);
+
+// Importing the tarball asset
+ASSET(test_txt);  // '.' replaced with "_" to make c++ happy
+// Create a decoder for the tarball
+lemlib_tarball::Decoder decoder(test_txt);
+
+/**
+ * Spins the conveyor and intake motors at a specified speed for a given
+ * duration.
+ *
+ * @param speed The speed at which to spin the motors, in RPM.
+ * @param duration The time to spin the motors, in milliseconds.
+ */
+void motorSpin(int speed, int duration) {
+  conveyor.move_velocity(speed) && intake.move_velocity(speed);
+  pros::delay(duration);
+  conveyor.move_velocity(0) && intake.move_velocity(0);
+}
+
+// Drivetrain settings
+lemlib::Drivetrain drivetrain(
+    &left_motors,                // left motor group
+    &right_motors,               // right motor group
+    14.05,                       // 10 inch track width
+    lemlib::Omniwheel::OLD_325,  // using old 3.25" omnis
+    333.33,                      // drivetrain rpm is 333.33
+    2  // horizontal drift is 2. If we had traction wheels, it would have been 8
+);
+
+// Lateral motion controller
+lemlib::ControllerSettings linearController(
+    10,   // proportional gain (kP)
+    0,    // integral gain (kI)
+    3,    // derivative gain (kD)
+    3,    // anti windup
+    1,    // small error range, in inches
+    100,  // small error range timeout, in milliseconds
+    3,    // large error range, in inches
+    500,  // large error range timeout, in milliseconds
+    20    // maximum acceleration (slew)
+);
+
+// Angular motion controller
+lemlib::ControllerSettings angularController(
+    2,    // proportional gain (kP)
+    0,    // integral gain (kI)
+    10,   // derivative gain (kD)
+    3,    // anti windup
+    1,    // small error range, in degrees
+    100,  // small error range timeout, in milliseconds
+    3,    // large error range, in degrees
+    500,  // large error range timeout, in milliseconds
+    0     // maximum acceleration (slew)
+);
+
+// sensors for odometry
+lemlib::OdomSensors sensors(
+    nullptr,  // vertical tracking wheel, which we don't have
+    nullptr,  // vertical tracking wheel 2, which we don't have
+    nullptr,  // horizontal tracking wheel, which we don't have
+    nullptr,  // horizontal tracking wheel 2, which we don't have
+    &imu      // inertial sensor
+);
+
+// Input curve for throttle input during driver control
+lemlib::ExpoDriveCurve throttleCurve(
+    3,     // joystick deadband out of 127
+    10,    // minimum output where drivetrain will move out of 127
+    1.019  // expo curve gain
+);
+
+// Input curve for steer input during driver control
+lemlib::ExpoDriveCurve steerCurve(
+    3,     // joystick deadband out of 127
+    10,    // minimum output where drivetrain will move out of 127
+    1.019  // expo curve gain
+);
+
+// create the chassis
+lemlib::Chassis chassis(drivetrain, linearController, angularController,
+                        sensors, &throttleCurve, &steerCurve);
+
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  *
  * All other competition modes are blocked by initialize; it is recommended
  * to keep execution time for this mode under a few seconds.
  */
-void initialize() { pros::screen::set_eraser(0x000000); }
+void initialize() {
+  pros::lcd::initialize();  // Initialize brain screen
+  chassis.calibrate();      // Calibrate sensors
+
+  // Thread to for brain screen and position logging
+  pros::Task screenTask([&]() {
+    while (true) {
+      // Print robot location to the brain screen
+      pros::lcd::print(0, "X: %f", chassis.getPose().x);          // X
+      pros::lcd::print(1, "Y: %f", chassis.getPose().y);          // Y
+      pros::lcd::print(2, "Theta: %f", chassis.getPose().theta);  // Heading
+      // Log position telemetry
+      lemlib::telemetrySink()->info("Chassis pose: {}", chassis.getPose());
+      // Delay to save resources
+      pros::delay(50);
+    }
+  });
+}
 
 /**
  * Runs while the robot is in the disabled state of Field Management System or
@@ -149,12 +262,39 @@ void competition_initialize() {}
  * from where it left off.
  */
 void autonomous() {
-  Drivetrain drivetrain(LEFT_MOTORS_PORT, RIGHT_MOTORS_PORT, TRACK_WIDTH,
-                        WHEEL_CIRC, GEAR_RATIO);
+  // Set the stopping point for Lady Brown
+  while (potentiometer.get_value() > 700) {
+    ladybrown.move_velocity(0);
+  }
+  // Set the brake mode for Lady Brown
+  ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 
-  drivetrain.move_pid(600);
-  drivetrain.rotate_pid(90);
-  drivetrain.move_pid(-600);
+  // Setting pose manually
+  chassis.setPose({-57, -14, 325});
+
+  chassis.follow(decoder["path1"], 15, 2000, false);
+  chassis.follow(decoder["path2"], 15, 2000);
+  chassis.follow(decoder["path3"], 15, 2000);
+  chassis.follow(decoder["path4"], 15, 2000, false);
+
+  // Alliance wall stake
+  motorSpin(200, 2000);
+
+  // chassis.follow(test_txt, 15, 4000);
+  //  Follow set path
+  while (true) {
+    lemlib::Pose pose = chassis.getPose();
+    if (pose.x >= -30 && pose.y >= -18) {
+      // TODO: Use PID to set to the angle
+      // moveToAngle(23.94);
+      intake.move_velocity(200) && conveyor.move_velocity(200);
+      pros::delay(2000);
+      intake.move_velocity(0) && conveyor.move_velocity(0);
+    }
+    // Update motors
+    // Delay to save resources
+    pros::delay(10);
+  }
 }
 
 /**
@@ -171,16 +311,6 @@ void autonomous() {
  * task, not resume it from where it left off.
  */
 void opcontrol() {
-  pros::Controller master(pros::E_CONTROLLER_MASTER);
-  pros::MotorGroup left_motors(LEFT_MOTORS_PORT);
-  pros::MotorGroup right_motors(RIGHT_MOTORS_PORT);
-  pros::Motor intake(INTAKE_PORT);
-  pros::Motor conveyor(CONVEYOR_PORT);
-  pros::Motor ladybrown(LADYBROWN_PORT);
-  pros::Vision vision_sensor(VISION_PORT);
-  pros::adi::DigitalOut piston(PISTON_PORT);
-  pros::adi::AnalogIn potentiometer(POTENTIOMETER_PORT);
-
   int frame_counter = 0;
 
   bool retracted = false;
@@ -208,29 +338,26 @@ void opcontrol() {
   while (true) {
     // Arcade control scheme
     left_motors.move(
-        int(pow(double(master.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) *
+        int(pow(double(controller.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) *
             127));  // Sets left motor voltage
     right_motors.move(
-        int(pow(double(master.get_analog(ANALOG_RIGHT_Y)) / 127, 3.0) *
+        int(pow(double(controller.get_analog(ANALOG_RIGHT_Y)) / 127, 3.0) *
             127));  // Sets right motor voltage
 
-    pros::screen::erase();
-    pros::screen::set_pen(0xffffff);
-
-    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
+    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
       ladybrown.move_velocity(2 * LADYBROWN_SPEED_PERCENT);
-    } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
+    } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
       ladybrown.move_velocity(-2 * LADYBROWN_SPEED_PERCENT);
     } else {
       ladybrown.move_velocity(0);
     }
 
-    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
+    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
       intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
       conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
 
       conveyor_state = SPIN_STATE::FORWARD;
-    } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
+    } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
       intake.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
       conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
 
@@ -242,7 +369,7 @@ void opcontrol() {
       conveyor_state = SPIN_STATE::STOP;
     }
 
-    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
+    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
       if (retracted) {
         piston.set_value(0);
         retracted = false;
@@ -254,7 +381,7 @@ void opcontrol() {
       }
     }
 
-    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
       if (scoring_color == DONUT_COLOR::RED) {
         scoring_color = DONUT_COLOR::BLUE;
         pros::delay(200);
@@ -264,7 +391,7 @@ void opcontrol() {
       }
     }
 
-    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_X)) {
+    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_X)) {
       ladybrown_snapping = true;
       pros::delay(200);
     }
@@ -330,10 +457,9 @@ void opcontrol() {
     }
 
     if (!(frame_counter % 10)) {
-      // master.print(0, 0, "Score: %s",
+      // controller.print(0, 0, "Score: %s",
       //              scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
-      master.print(0, 0, "%d",
-                   potentiometer.get_value());
+      controller.print(0, 0, "%d", potentiometer.get_value());
     }
 
     frame_counter++;
