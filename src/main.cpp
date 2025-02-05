@@ -99,7 +99,13 @@ const int LADYBROWN_PICKUP_POSITION = 1060;
 const int LADYBROWN_EPSILON = 20;
 
 /// @brief The proportional coefficient of the ladybrown PID controller.
-const double LADYBROWN_K_P = 0.1;
+const double LADYBROWN_KP = 0.05;
+
+/// @brief The integral coefficient of the ladybrown PID controller.
+const double LADYBROWN_KI = 0.0;
+
+/// @brief The derivative coefficient of the ladybrown PID controller.
+const double LADYBROWN_KD = 0.0;
 
 /// @brief Enum for the colors of the donuts.
 enum class DONUT_COLOR { RED, BLUE };
@@ -199,6 +205,8 @@ void opcontrol() {
   double conveyor_stop_target = 0;
 
   bool ladybrown_snapping = false;
+  double ladybrown_integral = 0;
+  double ladybrown_last_error = 0;
 
   conveyor.tare_position();
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
@@ -316,6 +324,7 @@ void opcontrol() {
       conveyor_stop_target = 0;
     }
 
+    // Ladybrown snapping with PID
     if (ladybrown_snapping) {
       int ladybrown_error =
           potentiometer.get_value_calibrated() - LADYBROWN_PICKUP_POSITION;
@@ -323,16 +332,25 @@ void opcontrol() {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
       } else {
-        ladybrown.move_velocity(-2 * LADYBROWN_SPEED_PERCENT * ladybrown_error *
-                                LADYBROWN_K_P);
+        ladybrown.move_velocity(LADYBROWN_KP * ladybrown_error +
+                                LADYBROWN_KI * ladybrown_integral +
+                                LADYBROWN_KD * ladybrown_last_error);
+
+        ladybrown_last_error = ladybrown_error;
+
+        // Reset the integral if the sign of the error changes
+        if ((ladybrown_error < 0) != (ladybrown_last_error < 0)) {
+          ladybrown_integral = 0;
+        } else {
+          ladybrown_integral += ladybrown_error;
+        }
       }
     }
 
     if (!(frame_counter % 10)) {
       // master.print(0, 0, "Score: %s",
       //              scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
-      master.print(0, 0, "%d",
-                   potentiometer.get_value());
+      master.print(0, 0, "%d", potentiometer.get_value());
     }
 
     frame_counter++;
