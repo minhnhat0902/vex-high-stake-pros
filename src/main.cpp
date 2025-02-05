@@ -1,7 +1,8 @@
 #include "main.h"
 
 #include "drivetrain.hpp"
-#include "lemlib/api.hpp"  // IWYU pragma: keep
+#include "lemlib-tarball/api.hpp"  // IWYU pragma: keep
+#include "lemlib/api.hpp"          // IWYU pragma: keep
 
 /// @brief Track width in mm.
 const double TRACK_WIDTH = 357.0;
