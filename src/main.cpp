@@ -2,7 +2,8 @@
 
 #include "drivetrain.hpp"
 #include "lemlib-tarball/api.hpp"  // IWYU pragma: keep
-#include "lemlib/api.hpp"          // IWYU pragma: keep
+#include "lemlib/api.hpp"  // IWYU pragma: keep
+#include "pid.hpp"
 
 /// @brief Track width in mm.
 const double TRACK_WIDTH = 357.0;
@@ -103,7 +104,13 @@ const int LADYBROWN_PICKUP_POSITION = 1060;
 const int LADYBROWN_EPSILON = 20;
 
 /// @brief The proportional coefficient of the ladybrown PID controller.
-const double LADYBROWN_K_P = 0.1;
+const double LADYBROWN_KP = 0.05;
+
+/// @brief The integral coefficient of the ladybrown PID controller.
+const double LADYBROWN_KI = 0.0;
+
+/// @brief The derivative coefficient of the ladybrown PID controller.
+const double LADYBROWN_KD = 0.0;
 
 /// @brief Enum for the colors of the donuts.
 enum class DONUT_COLOR { RED, BLUE };
@@ -330,6 +337,8 @@ void opcontrol() {
   double conveyor_stop_target = 0;
 
   bool ladybrown_snapping = false;
+  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD,
+                    LADYBROWN_EPSILON);
 
   conveyor.tare_position();
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
@@ -444,6 +453,7 @@ void opcontrol() {
       conveyor_stop_target = 0;
     }
 
+    // Ladybrown snapping with PID
     if (ladybrown_snapping) {
       int ladybrown_error =
           potentiometer.get_value_calibrated() - LADYBROWN_PICKUP_POSITION;
@@ -451,8 +461,7 @@ void opcontrol() {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
       } else {
-        ladybrown.move_velocity(-2 * LADYBROWN_SPEED_PERCENT * ladybrown_error *
-                                LADYBROWN_K_P);
+        ladybrown.move_velocity(ladybrown_pid.update(ladybrown_error));
       }
     }
 
