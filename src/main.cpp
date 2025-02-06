@@ -2,6 +2,7 @@
 
 #include "drivetrain.hpp"
 #include "lemlib/api.hpp"  // IWYU pragma: keep
+#include "pid.hpp"
 
 /// @brief Track width in mm.
 const double TRACK_WIDTH = 357.0;
@@ -205,8 +206,8 @@ void opcontrol() {
   double conveyor_stop_target = 0;
 
   bool ladybrown_snapping = false;
-  double ladybrown_integral = 0;
-  double ladybrown_last_error = 0;
+  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD,
+                    LADYBROWN_EPSILON);
 
   conveyor.tare_position();
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
@@ -332,18 +333,7 @@ void opcontrol() {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
       } else {
-        ladybrown.move_velocity(LADYBROWN_KP * ladybrown_error +
-                                LADYBROWN_KI * ladybrown_integral +
-                                LADYBROWN_KD * ladybrown_last_error);
-
-        ladybrown_last_error = ladybrown_error;
-
-        // Reset the integral if the sign of the error changes
-        if ((ladybrown_error < 0) != (ladybrown_last_error < 0)) {
-          ladybrown_integral = 0;
-        } else {
-          ladybrown_integral += ladybrown_error;
-        }
+        ladybrown.move_velocity(ladybrown_pid.update(ladybrown_error));
       }
     }
 
