@@ -2,7 +2,7 @@
 
 #include "drivetrain.hpp"
 #include "lemlib-tarball/api.hpp"  // IWYU pragma: keep
-#include "lemlib/api.hpp"  // IWYU pragma: keep
+#include "lemlib/api.hpp"          // IWYU pragma: keep
 #include "pid.hpp"
 
 /// @brief Track width in mm.
@@ -108,7 +108,14 @@ const double LADYBROWN_KD = 0.0;
 enum class DONUT_COLOR { RED, BLUE };
 
 /// @brief Enum for motor spinning states.
-enum class SPIN_STATE { STOP, FORWARD, REVERSE };
+enum class SPIN_STATE {
+  /// @brief The motor is idle.
+  STOP,
+  /// @brief The motor is spinning forward.
+  FORWARD,
+  /// @brief The motor is spinning in reverse.
+  REVERSE
+};
 
 /// @brief Enum for donut color sorting states.
 enum class SORTING_STATE {
@@ -151,7 +158,7 @@ void motorSpin(int speed, int duration) {
   conveyor.move_velocity(0) && intake.move_velocity(0);
 }
 
-// Drivetrain settings
+// Drivetrain settings.
 lemlib::Drivetrain drivetrain(
     &left_motors,                // left motor group
     &right_motors,               // right motor group
@@ -161,7 +168,7 @@ lemlib::Drivetrain drivetrain(
     2  // horizontal drift is 2. If we had traction wheels, it would have been 8
 );
 
-// Lateral motion controller
+// Lateral motion controller.
 lemlib::ControllerSettings linearController(
     10,   // proportional gain (kP)
     0,    // integral gain (kI)
@@ -174,7 +181,7 @@ lemlib::ControllerSettings linearController(
     20    // maximum acceleration (slew)
 );
 
-// Angular motion controller
+// Angular motion controller.
 lemlib::ControllerSettings angularController(
     2,    // proportional gain (kP)
     0,    // integral gain (kI)
@@ -187,7 +194,7 @@ lemlib::ControllerSettings angularController(
     0     // maximum acceleration (slew)
 );
 
-// sensors for odometry
+// Sensors for odometry.
 lemlib::OdomSensors sensors(
     nullptr,  // vertical tracking wheel, which we don't have
     nullptr,  // vertical tracking wheel 2, which we don't have
@@ -196,21 +203,21 @@ lemlib::OdomSensors sensors(
     &imu      // inertial sensor
 );
 
-// Input curve for throttle input during driver control
+// Input curve for throttle input during driver control.
 lemlib::ExpoDriveCurve throttleCurve(
     3,     // joystick deadband out of 127
     10,    // minimum output where drivetrain will move out of 127
     1.019  // expo curve gain
 );
 
-// Input curve for steer input during driver control
+// Input curve for steer input during driver control.
 lemlib::ExpoDriveCurve steerCurve(
     3,     // joystick deadband out of 127
     10,    // minimum output where drivetrain will move out of 127
     1.019  // expo curve gain
 );
 
-// create the chassis
+// Create the chassis.
 lemlib::Chassis chassis(drivetrain, linearController, angularController,
                         sensors, &throttleCurve, &steerCurve);
 
@@ -318,41 +325,61 @@ void autonomous() {
  * task, not resume it from where it left off.
  */
 void opcontrol() {
+  // The number of main control loop iterations since the start of the program.
   int frame_counter = 0;
 
-  bool retracted = false;
-  SORTING_STATE sorting_state = SORTING_STATE::NOT_DETECTED;
+  // CONVEYOR VARIABLES ----------------------------------------------------- //
+  // The state of the conveyor motor.
   SPIN_STATE conveyor_state = SPIN_STATE::STOP;
+  // The target position for the conveyor motor to stop at.
+  double conveyor_stop_target = 0;
 
+  // PISTON VARIABLES ------------------------------------------------------- //
+  // Whether the piston is retracted.
+  bool retracted = false;
+
+  // COLOR SORTING VARIABLES ------------------------------------------------ //
+  // The state of the donut sorting process.
+  SORTING_STATE sorting_state = SORTING_STATE::NOT_DETECTED;
+  // The color of the donuts being scored, defaulting to red.
+  DONUT_COLOR scoring_color = DONUT_COLOR::RED;
+  // The currently visible donut.
+  pros::vision_object_s_t visible_donut;
+  // Color signature for the red donut.
   auto RED_SIG = pros::Vision::signature_from_utility(
       RED_SIG_ID, 3797, 11657, 7727, -2281, -1609, -1945, 1.5, 0);
+  // Color signature for the blue donut.
   auto BLUE_SIG = pros::Vision::signature_from_utility(
       BLUE_SIG_ID, -4477, -3539, -4008, 51, 4449, 2250, 2.6, 0);
 
-  vision_sensor.set_signature(RED_SIG_ID, &RED_SIG);
-  vision_sensor.set_signature(BLUE_SIG_ID, &BLUE_SIG);
-
-  DONUT_COLOR scoring_color = DONUT_COLOR::BLUE;
-  pros::vision_object_s_t visible_donut;
-  double conveyor_stop_target = 0;
-
+  // LADYBROWN VARIABLES ---------------------------------------------------- //
+  // Whether the ladybrown is currently snapping to pickup position at the top
+  // of the conveyor.
   bool ladybrown_snapping = false;
+  // PID controller for the ladybrown.
   PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD,
                     LADYBROWN_EPSILON);
 
-  conveyor.tare_position();
+  // INITIALIZATION --------------------------------------------------------- //
+  // Set the color signatures for the vision sensor.
+  vision_sensor.set_signature(RED_SIG_ID, &RED_SIG);
+  vision_sensor.set_signature(BLUE_SIG_ID, &BLUE_SIG);
+
+  // Set the brake mode for the ladybrown.
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
-  potentiometer.calibrate();
 
+  conveyor.tare_position();   // Reset the conveyor position.
+  potentiometer.calibrate();  // Calibrate the potentiometer.
+
+  // MAIN CONTROL LOOP ------------------------------------------------------ //
   while (true) {
-    // Arcade control scheme
-    left_motors.move(
-        int(pow(double(controller.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) *
-            127));  // Sets left motor voltage
-    right_motors.move(
-        int(pow(double(controller.get_analog(ANALOG_RIGHT_Y)) / 127, 3.0) *
-            127));  // Sets right motor voltage
+    // Tank control scheme.
+    left_motors.move(int(
+        pow(double(controller.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) * 127));
+    right_motors.move(int(
+        pow(double(controller.get_analog(ANALOG_RIGHT_Y)) / 127, 3.0) * 127));
 
+    // Ladybrown control with the controller L buttons.
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
       ladybrown.move_velocity(2 * LADYBROWN_SPEED_PERCENT);
     } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
@@ -361,6 +388,7 @@ void opcontrol() {
       ladybrown.move_velocity(0);
     }
 
+    // Simultaneous conveyor and intake control with the controller R buttons.
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
       intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
       conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
@@ -378,6 +406,7 @@ void opcontrol() {
       conveyor_state = SPIN_STATE::STOP;
     }
 
+    // Toggle piston state with the controller B button.
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
       if (retracted) {
         piston.set_value(0);
@@ -390,6 +419,7 @@ void opcontrol() {
       }
     }
 
+    // Toggle donut scoring color with the controller A button.
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
       if (scoring_color == DONUT_COLOR::RED) {
         scoring_color = DONUT_COLOR::BLUE;
@@ -400,6 +430,7 @@ void opcontrol() {
       }
     }
 
+    // Ladybrown snapping with the controller X button.
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_X)) {
       ladybrown_snapping = true;
       pros::delay(200);
@@ -486,18 +517,22 @@ void opcontrol() {
       conveyor_stop_target = 0;
     }
 
-    // Ladybrown snapping with PID
+    // Ladybrown snapping with PID.
     if (ladybrown_snapping) {
       int ladybrown_error =
           potentiometer.get_value_calibrated() - LADYBROWN_PICKUP_POSITION;
+
+      // If the ladybrown is within the acceptable error, stop the motor.
       if (std::abs(ladybrown_error) < LADYBROWN_EPSILON) {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
-      } else {
+      } else {  // Otherwise, use PID for the ladybrown's velocity.
         ladybrown.move_velocity(ladybrown_pid.update(ladybrown_error));
       }
     }
 
+    // Print the potentiometer value to the controller every 10 frames because
+    // of the slow refresh rate of the controller screen.
     if (!(frame_counter % 10)) {
       // controller.print(0, 0, "Score: %s",
       //              scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
