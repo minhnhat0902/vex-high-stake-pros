@@ -54,7 +54,7 @@ const double CONVEYOR_TRANSPORT_SPEED_PERCENT = 75;
 
 /// @brief The speed of the ladybrown as a percentage of its max speed (200
 /// rpm).
-const double LADYBROWN_SPEED_PERCENT = 75;
+const double LADYBROWN_SPEED_PERCENT = 50;
 
 /// @brief Vision sensor signature ID for the red donut.
 const uint32_t RED_SIG_ID = 1;
@@ -576,10 +576,11 @@ void opcontrol() {
             // Run the straight program on controller A button.
             if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
               Key* straight_key = straight_selector.get_current_key();
-              chassis.setPose({0, 0, 0});
-              chassis.moveToPose(
-                  0, std::stof(straight_key->values[straight_key->index]), 0,
-                  5000);
+              float distance =
+                  std::stof(straight_key->values[straight_key->index]);
+              chassis.setPose(0, 0, 0);
+              chassis.moveToPoint(0, distance, 100000,
+                                  {forwards : distance > 0}, false);
 
               pros::delay(200);
             }
@@ -591,9 +592,10 @@ void opcontrol() {
             // Run the turn program on controller A button.
             if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
               Key* turn_key = turn_selector.get_current_key();
-              chassis.setPose({0, 0, 0});
-              chassis.turnToHeading(std::stof(turn_key->values[turn_key->index]),
-                                    5000);
+              chassis.setPose(0, 0, 0);
+              chassis.turnToHeading(
+                  std::stof(turn_key->values[turn_key->index]), 10000, {},
+                  false);
 
               pros::delay(200);
             }
@@ -693,7 +695,7 @@ void opcontrol() {
     if (!(frame_counter % 10)) {
       // controller.print(0, 0, "Score: %s",
       //                  scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
-      controller.print(0, 0, "%d", potentiometer.get_value());
+      controller.print(0, 0, "%05d", potentiometer.get_value_calibrated());
     }
 
     frame_counter++;

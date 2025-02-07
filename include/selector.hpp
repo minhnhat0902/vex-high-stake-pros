@@ -18,9 +18,6 @@ class Selector {
   /// @brief The controller object.
   pros::Controller controller;
 
-  /// @brief The list of keys for the selector.
-  std::vector<Key> keys;
-
   /// @brief The index of the current selected key.
   int key_index;
 
@@ -28,6 +25,9 @@ class Selector {
   bool is_clearing;
 
  public:
+  /// @brief The list of keys for the selector.
+  std::vector<Key> keys;
+
   /// @brief Constructor for the Selector class.
   /// @param controller The controller object to use for the selector.
   /// @param keys The list of keys for the selector.
