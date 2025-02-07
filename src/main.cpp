@@ -85,7 +85,7 @@ const int CONVEYOR_OUT_TEETH = 12;
 const int CONVEYOR_LINKS = 74;
 
 /// @brief Offset in links between the first and second conveyor hooks.
-const int CONVEYOR_HOOK_2_OFFSET_LINKS = 31;
+const int CONVEYOR_HOOK_2_OFFSET_LINKS = 38;
 
 /// @brief Number of motor degrees for the conveyor to make a full revolution.
 const int CONVEYOR_REVOLUTION_DEGREES = double(CONVEYOR_LINKS) /
@@ -99,11 +99,15 @@ const int CONVEYOR_HOOK_2_OFFSET_DEGREES =
 
 /// @brief Distance in conveyor motor degrees needed to rotate a hook from the
 /// top of the conveyor to the vision sensor.
-const int DISTANCE_VISION_TO_TOP = 200;
+const int DISTANCE_VISION_TO_TOP = 360;
 
 /// @brief The error tolerance for hook positioning during vision sensor
 /// detection and transportation, in degrees of the conveyor motor.
 const int CONVEYOR_TOLERANCE = 50;
+
+/// @brief The distance in conveyor motor degrees for the conveyor to move
+/// forward for a cooldown after a wrong color donut has been ejected.
+const int CONVEYOR_COOLDOWN_DISTANCE = 200;
 
 /// @brief Position of the ladybrown at the top of the conveyor for pickup, in
 /// potentiometer units.
@@ -144,7 +148,10 @@ enum class SORTING_STATE {
   /// detection range to the top of the conveyor.
   TRANSPORTING,
   /// @brief A donut of the wrong color is being ejected from the conveyor.
-  EJECTING
+  EJECTING,
+  /// @brief A donut is ejected from the conveyor, and the conveyor is moving
+  /// forward for a cooldown distance.
+  RECOVERING
 };
 
 // Initializing the controller, motors and sensors.
@@ -347,7 +354,8 @@ void initialize() {
                                                             : RED_SIG_ID);
 
             // Check if the donut is leaving the vision sensor's field of view.
-            if (visible_donut.left_coord < LEFT_EDGE_LIMIT) {
+            if (visible_donut.left_coord > LEFT_EDGE_LIMIT &&
+                visible_donut.left_coord < MIN_SCREEN_COVERAGE) {
               // The donut is now transporting to the top of the conveyor.
               sorting_state = SORTING_STATE::TRANSPORTING;
 
@@ -374,9 +382,9 @@ void initialize() {
                                        CONVEYOR_TOLERANCE;
               } else if (conveyor_offset >
                          CONVEYOR_REVOLUTION_DEGREES - CONVEYOR_TOLERANCE) {
-                // The detected hook is the second hook and it has not passed
+                // The detected hook is the first hook and it has not passed
                 // the standard detection position.
-                conveyor_stop_target = conveyor_offset - conveyor_offset +
+                conveyor_stop_target = conveyor_position - conveyor_offset +
                                        CONVEYOR_REVOLUTION_DEGREES +
                                        DISTANCE_VISION_TO_TOP -
                                        CONVEYOR_TOLERANCE;
@@ -397,7 +405,8 @@ void initialize() {
               sorting_state = SORTING_STATE::EJECTING;
               conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
               // Offset the target position by the reversing distance.
-              conveyor_stop_target -= CONVEYOR_EJECT_DISTANCE;
+              conveyor_stop_target -=
+                  (CONVEYOR_EJECT_DISTANCE - 2 * CONVEYOR_TOLERANCE);
             }
             break;
 
@@ -405,8 +414,18 @@ void initialize() {
             // If the conveyor has reversed to target position, reset the
             // sorting state and move the conveyor forward.
             if (conveyor.get_raw_position(&now) <= conveyor_stop_target) {
-              sorting_state = SORTING_STATE::NOT_DETECTED;
+              sorting_state = SORTING_STATE::RECOVERING;
               conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+              conveyor_stop_target +=
+                  (CONVEYOR_COOLDOWN_DISTANCE - 2 * CONVEYOR_TOLERANCE);
+            }
+            break;
+
+          case SORTING_STATE::RECOVERING:
+            // If the conveyor has reversed to target position, reset the
+            // sorting state and move the conveyor forward.
+            if (conveyor.get_raw_position(&now) >= conveyor_stop_target) {
+              sorting_state = SORTING_STATE::NOT_DETECTED;
               conveyor_stop_target = 0;
             }
             break;
