@@ -47,6 +47,23 @@
                 "user_files": [],
                 "version": "0.5.5"
             },
+            "LemLibTarball": {
+                "location": "/Users/ntran/Library/Application Support/PROS/templates/LemLibTarball@0.5.0-rc.1",
+                "metadata": {
+                    "origin": "LemLibTarball"
+                },
+                "name": "LemLibTarball",
+                "py/object": "pros.conductor.templates.local_template.LocalTemplate",
+                "supported_kernels": "^4.1.1",
+                "system_files": [
+                    "static/my_lemlib_tarball_file.txt",
+                    "include/lemlib-tarball/api.hpp",
+                    "firmware/LemLibTarball.a"
+                ],
+                "target": "v5",
+                "user_files": [],
+                "version": "0.5.0-rc.1"
+            },
             "kernel": {
                 "location": "/Users/ntran/Library/Application Support/PROS/templates/kernel@4.1.1",
                 "metadata": {
