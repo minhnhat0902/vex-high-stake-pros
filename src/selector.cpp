@@ -1,7 +1,7 @@
 #include "selector.hpp"
 
 Selector::Selector(pros::Controller controller, std::initializer_list<Key> keys)
-    : controller(controller), keys(keys), key_index(0) {}
+    : controller(controller), keys(keys), key_index(0), is_clearing(false) {}
 
 Key* Selector::get_current_key() { return &keys[key_index]; }
 
@@ -35,6 +35,12 @@ void Selector::update() {
 }
 
 void Selector::display() {
+  // Alternate between clearing and writing to the controller.
+  is_clearing = !is_clearing;
+  if (is_clearing) {
+    controller.clear();
+  }
+
   Key* current_key = get_current_key();
 
   // Display the current key on the controller.

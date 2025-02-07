@@ -24,6 +24,9 @@ class Selector {
   /// @brief The index of the current selected key.
   int key_index;
 
+  /// @brief Whether the controller screen needs to be cleared on this frame.
+  bool is_clearing;
+
  public:
   /// @brief Constructor for the Selector class.
   /// @param controller The controller object to use for the selector.
