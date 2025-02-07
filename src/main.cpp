@@ -1,5 +1,7 @@
 #include "main.h"
 
+#include <atomic>
+
 #include "drivetrain.hpp"
 #include "lemlib-tarball/api.hpp"  // IWYU pragma: keep
 #include "lemlib/api.hpp"          // IWYU pragma: keep
@@ -44,6 +46,10 @@ const std::int8_t PISTON_PORT = 'b';
 /// @brief The speed of the conveyor as a percentage of its max speed (200 rpm).
 const double CONVEYOR_SPEED_PERCENT = 100;
 
+/// @brief The speed of the conveyor when transporting a wrong color donut as a
+/// percentage of its max speed (200 rpm).
+const double CONVEYOR_TRANSPORT_SPEED_PERCENT = 75;
+
 /// @brief The speed of the ladybrown as a percentage of its max speed (200
 /// rpm).
 const double LADYBROWN_SPEED_PERCENT = 75;
@@ -60,7 +66,12 @@ const double CONVEYOR_EJECT_DISTANCE = 100;
 
 /// @brief Minimum screen coverage for the donut to be detected using the vision
 /// sensor.
-const int MIN_SCREEN_COVERAGE = 100;
+const int MIN_SCREEN_COVERAGE = 160;
+
+/// @brief The left edge limit for the vision sensor to consider a donut in
+/// view. If the left edge of the donut is less than this limit, it is
+/// considered leaving the screen.
+const int LEFT_EDGE_LIMIT = 80;
 
 /// @brief Gear ratio for the conveyor motor.
 const double CONVEYOR_GEAR_RATIO = 12.0 / 18.0;
@@ -72,21 +83,25 @@ const int CONVEYOR_OUT_TEETH = 12;
 const int CONVEYOR_LINKS = 74;
 
 /// @brief Offset in links between the first and second conveyor hooks.
-const int CONVEYOR_HOOK_2_OFFSET = 31;
+const int CONVEYOR_HOOK_2_OFFSET_LINKS = 31;
 
 /// @brief Number of motor degrees for the conveyor to make a full revolution.
-const double CONVEYOR_REVOLUTION_DEGREES = double(CONVEYOR_LINKS) /
-                                           double(CONVEYOR_OUT_TEETH) * 360.0 *
-                                           CONVEYOR_GEAR_RATIO;
+const int CONVEYOR_REVOLUTION_DEGREES = double(CONVEYOR_LINKS) /
+                                        double(CONVEYOR_OUT_TEETH) * 360.0 *
+                                        CONVEYOR_GEAR_RATIO;
 
 /// @brief Offset in degrees between the first and second conveyor hook.
-const double CONVEYOR_HOOK_2_OFFSET_DEGREES = double(CONVEYOR_HOOK_2_OFFSET) /
-                                              double(CONVEYOR_OUT_TEETH) *
-                                              360.0 * CONVEYOR_GEAR_RATIO;
+const int CONVEYOR_HOOK_2_OFFSET_DEGREES =
+    double(CONVEYOR_HOOK_2_OFFSET_LINKS) / double(CONVEYOR_OUT_TEETH) * 360.0 *
+    CONVEYOR_GEAR_RATIO;
 
-/// @brief Distance in conveyor motor degrees between the vision sensor and the
-/// top of the conveyor.
-const double DISTANCE_VISION_TO_TOP = 520;
+/// @brief Distance in conveyor motor degrees needed to rotate a hook from the
+/// top of the conveyor to the vision sensor.
+const int DISTANCE_VISION_TO_TOP = 200;
+
+/// @brief The error tolerance for hook positioning during vision sensor
+/// detection and transportation, in degrees of the conveyor motor.
+const int CONVEYOR_TOLERANCE = 50;
 
 /// @brief Position of the ladybrown at the top of the conveyor for pickup, in
 /// potentiometer units.
@@ -121,6 +136,8 @@ enum class SPIN_STATE {
 enum class SORTING_STATE {
   /// @brief No donuts of the wrong color are detected.
   NOT_DETECTED,
+  /// @brief A donut of the wrong color is detected.
+  IN_VIEW,
   /// @brief A donut of the wrong color is moving from the vision sensor's
   /// detection range to the top of the conveyor.
   TRANSPORTING,
@@ -139,6 +156,9 @@ pros::Vision vision_sensor(VISION_PORT);
 pros::Imu imu(INERTIAL_PORT);
 pros::adi::DigitalOut piston(PISTON_PORT);
 pros::adi::AnalogIn potentiometer(POTENTIOMETER_PORT);
+
+// The current time in milliseconds.
+uint32_t now;
 
 // Importing the tarball asset
 ASSET(test_txt);  // '.' replaced with "_" to make c++ happy
@@ -221,6 +241,26 @@ lemlib::ExpoDriveCurve steerCurve(
 lemlib::Chassis chassis(drivetrain, linearController, angularController,
                         sensors, &throttleCurve, &steerCurve);
 
+// CONVEYOR VARIABLES ----------------------------------------------------- //
+// The state of the conveyor motor.
+std::atomic<SPIN_STATE> conveyor_state = SPIN_STATE::STOP;
+// The target position for the conveyor motor to stop at.
+int conveyor_stop_target = 0;
+
+// COLOR SORTING VARIABLES ------------------------------------------------ //
+// The state of the donut sorting process.
+std::atomic<SORTING_STATE> sorting_state = SORTING_STATE::NOT_DETECTED;
+// The color of the donuts being scored, defaulting to red.
+std::atomic<DONUT_COLOR> scoring_color = DONUT_COLOR::RED;
+// The currently visible donut.
+pros::vision_object_s_t visible_donut;
+// Color signature for the red donut.
+auto RED_SIG = pros::Vision::signature_from_utility(
+    RED_SIG_ID, 3797, 11657, 7727, -2281, -1609, -1945, 1.5, 0);
+// Color signature for the blue donut.
+auto BLUE_SIG = pros::Vision::signature_from_utility(
+    BLUE_SIG_ID, -4477, -3539, -4008, 51, 4449, 2250, 2.6, 0);
+
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  *
@@ -231,6 +271,8 @@ void initialize() {
   pros::lcd::initialize();  // Initialize brain screen
   chassis.calibrate();      // Calibrate sensors
 
+  now = pros::millis();
+
   // Thread to for brain screen and position logging
   pros::Task screenTask([&]() {
     while (true) {
@@ -238,10 +280,112 @@ void initialize() {
       pros::lcd::print(0, "X: %f", chassis.getPose().x);          // X
       pros::lcd::print(1, "Y: %f", chassis.getPose().y);          // Y
       pros::lcd::print(2, "Theta: %f", chassis.getPose().theta);  // Heading
+      pros::lcd::print(3, "Conveyor: %d",
+                       conveyor.get_raw_position(&now));  // Conveyor
       // Log position telemetry
       lemlib::telemetrySink()->info("Chassis pose: {}", chassis.getPose());
       // Delay to save resources
       pros::delay(50);
+    }
+  });
+
+  // Thread to for color sorting
+  pros::Task sortingTask([&]() {
+    while (true) {
+      // Start the donut color sorting process if the conveyor is spinning.
+      if (conveyor_state.load() == SPIN_STATE::FORWARD) {
+        switch (sorting_state.load()) {
+          case SORTING_STATE::NOT_DETECTED:
+            // Check for donuts of the wrong color using the vision sensor.
+            visible_donut = vision_sensor.get_by_sig(
+                0, scoring_color.load() == DONUT_COLOR::RED ? BLUE_SIG_ID
+                                                            : RED_SIG_ID);
+
+            // Avoid false positive detections by checking if the donut cover
+            // enough of the vision sensor's field of view.
+            if (visible_donut.width >= MIN_SCREEN_COVERAGE) {
+              // Slow the conveyor down to avoid uncertainty in hook ejecting
+              // position.
+              conveyor.move_velocity(2 * CONVEYOR_TRANSPORT_SPEED_PERCENT);
+
+              // The donut is now in view.
+              sorting_state = SORTING_STATE::IN_VIEW;
+            }
+            break;
+
+          case SORTING_STATE::IN_VIEW:
+            // Check for donuts of the wrong color using the vision sensor.
+            visible_donut = vision_sensor.get_by_sig(
+                0, scoring_color.load() == DONUT_COLOR::RED ? BLUE_SIG_ID
+                                                            : RED_SIG_ID);
+
+            // Check if the donut is leaving the vision sensor's field of view.
+            if (visible_donut.left_coord < LEFT_EDGE_LIMIT) {
+              // The donut is now transporting to the top of the conveyor.
+              sorting_state = SORTING_STATE::TRANSPORTING;
+
+              int conveyor_position = conveyor.get_raw_position(&now);
+              // // The number of revolutions the conveyor has made.
+              // int conveyor_revs = conveyor_position /
+              // CONVEYOR_REVOLUTION_DEGREES; The offset in degrees of the
+              // conveyor motor from the last complete revolution.
+              int conveyor_offset =
+                  conveyor_position % CONVEYOR_REVOLUTION_DEGREES;
+
+              // Correct for negative conveyor position.
+              if (conveyor_offset < 0) {
+                conveyor_offset += CONVEYOR_REVOLUTION_DEGREES;
+              }
+
+              // Set the target position for the conveyor to stop at based on
+              // which hook the donut is on.
+              if (conveyor_offset < CONVEYOR_TOLERANCE) {
+                // The detected hook is the first hook and it has passed the
+                // standard detection position.
+                conveyor_stop_target = conveyor_position - conveyor_offset +
+                                       DISTANCE_VISION_TO_TOP -
+                                       CONVEYOR_TOLERANCE;
+              } else if (conveyor_offset >
+                         CONVEYOR_REVOLUTION_DEGREES - CONVEYOR_TOLERANCE) {
+                // The detected hook is the second hook and it has not passed
+                // the standard detection position.
+                conveyor_stop_target = conveyor_offset - conveyor_offset +
+                                       CONVEYOR_REVOLUTION_DEGREES +
+                                       DISTANCE_VISION_TO_TOP -
+                                       CONVEYOR_TOLERANCE;
+              } else {
+                // The detected hook is the second hook.
+                conveyor_stop_target = conveyor_position - conveyor_offset +
+                                       CONVEYOR_HOOK_2_OFFSET_DEGREES +
+                                       DISTANCE_VISION_TO_TOP -
+                                       CONVEYOR_TOLERANCE;
+              }
+            }
+            break;
+
+          case SORTING_STATE::TRANSPORTING:
+            // If the conveyor has reached the top, start ejecting the donut
+            // by moving the conveyor in reverse.
+            if (conveyor.get_raw_position(&now) >= conveyor_stop_target) {
+              sorting_state = SORTING_STATE::EJECTING;
+              conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+              // Offset the target position by the reversing distance.
+              conveyor_stop_target -= CONVEYOR_EJECT_DISTANCE;
+            }
+            break;
+
+          case SORTING_STATE::EJECTING:
+            // If the conveyor has reversed to target position, reset the
+            // sorting state and move the conveyor forward.
+            if (conveyor.get_raw_position(&now) <= conveyor_stop_target) {
+              sorting_state = SORTING_STATE::NOT_DETECTED;
+              conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+              conveyor_stop_target = 0;
+            }
+            break;
+        }
+      }
+      pros::delay(20);
     }
   });
 }
@@ -328,29 +472,9 @@ void opcontrol() {
   // The number of main control loop iterations since the start of the program.
   int frame_counter = 0;
 
-  // CONVEYOR VARIABLES ----------------------------------------------------- //
-  // The state of the conveyor motor.
-  SPIN_STATE conveyor_state = SPIN_STATE::STOP;
-  // The target position for the conveyor motor to stop at.
-  double conveyor_stop_target = 0;
-
   // PISTON VARIABLES ------------------------------------------------------- //
   // Whether the piston is retracted.
   bool retracted = false;
-
-  // COLOR SORTING VARIABLES ------------------------------------------------ //
-  // The state of the donut sorting process.
-  SORTING_STATE sorting_state = SORTING_STATE::NOT_DETECTED;
-  // The color of the donuts being scored, defaulting to red.
-  DONUT_COLOR scoring_color = DONUT_COLOR::RED;
-  // The currently visible donut.
-  pros::vision_object_s_t visible_donut;
-  // Color signature for the red donut.
-  auto RED_SIG = pros::Vision::signature_from_utility(
-      RED_SIG_ID, 3797, 11657, 7727, -2281, -1609, -1945, 1.5, 0);
-  // Color signature for the blue donut.
-  auto BLUE_SIG = pros::Vision::signature_from_utility(
-      BLUE_SIG_ID, -4477, -3539, -4008, 51, 4449, 2250, 2.6, 0);
 
   // LADYBROWN VARIABLES ---------------------------------------------------- //
   // Whether the ladybrown is currently snapping to pickup position at the top
@@ -389,21 +513,23 @@ void opcontrol() {
     }
 
     // Simultaneous conveyor and intake control with the controller R buttons.
-    if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
-      intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
-      conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+    if (sorting_state.load() == SORTING_STATE::NOT_DETECTED) {
+      if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
+        intake.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+        conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
 
-      conveyor_state = SPIN_STATE::FORWARD;
-    } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
-      intake.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
-      conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+        conveyor_state = SPIN_STATE::FORWARD;
+      } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
+        intake.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
+        conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
 
-      conveyor_state = SPIN_STATE::REVERSE;
-    } else {
-      intake.move_velocity(0);
-      conveyor.move_velocity(0);
+        conveyor_state = SPIN_STATE::REVERSE;
+      } else {
+        intake.move_velocity(0);
+        conveyor.move_velocity(0);
 
-      conveyor_state = SPIN_STATE::STOP;
+        conveyor_state = SPIN_STATE::STOP;
+      }
     }
 
     // Toggle piston state with the controller B button.
@@ -436,87 +562,6 @@ void opcontrol() {
       pros::delay(200);
     }
 
-    // Start the donut color sorting process if the conveyor is spinning.
-    if (conveyor_state == SPIN_STATE::FORWARD) {
-      switch (sorting_state) {
-        case SORTING_STATE::NOT_DETECTED:
-          // Check for donuts of the wrong color using the vision sensor.
-          visible_donut = vision_sensor.get_by_sig(
-              0, scoring_color == DONUT_COLOR::RED ? BLUE_SIG_ID : RED_SIG_ID);
-
-          // Avoid false positive detections by checking if the donut cover
-          // enough of the vision sensor's field of view.
-          if (visible_donut.height >= MIN_SCREEN_COVERAGE) {
-            // The donut is now transporting to the top of the conveyor.
-            sorting_state = SORTING_STATE::TRANSPORTING;
-
-            double conveyor_position = conveyor.get_position();
-            // The number of revolutions the conveyor has made.
-            int conveyor_revs =
-                int(conveyor_position / CONVEYOR_REVOLUTION_DEGREES);
-            // The offset in  degrees of the conveyor motor from the last
-            // complete revolution.
-            double conveyor_offset =
-                conveyor_position - conveyor_revs * CONVEYOR_REVOLUTION_DEGREES;
-            // The offset in degrees of the conveyor hook from the vision
-            // sensor.
-            double hook_offset = conveyor_offset + DISTANCE_VISION_TO_TOP;
-            // In case the current hook is the first one, and it has passed the
-            // vision sensor, the offset needs to be adjusted.
-            if (hook_offset >= CONVEYOR_REVOLUTION_DEGREES) {
-              hook_offset -= CONVEYOR_REVOLUTION_DEGREES;
-            }
-
-            // The closest offset to the vision sensor so far.
-            double closest_offset = std::abs(hook_offset);
-            int detected_hook = 1;  // The detected hook number.
-
-            // Check if the second hook is closer to the vision sensor, then set
-            // it as the detected hook.
-            if (std::abs(hook_offset + CONVEYOR_HOOK_2_OFFSET_DEGREES) >
-                closest_offset) {
-              detected_hook = 2;
-              closest_offset =
-                  std::abs(hook_offset + CONVEYOR_HOOK_2_OFFSET_DEGREES);
-            }
-
-            // The target position for the conveyor motor to stop at so the
-            // first hook is at the top of the conveyor.
-            conveyor_stop_target =
-                (conveyor_revs + 1) * CONVEYOR_REVOLUTION_DEGREES;
-
-            // Adjust the target position if the second hook is detected.
-            if (detected_hook == 2) {
-              conveyor_stop_target += CONVEYOR_HOOK_2_OFFSET_DEGREES;
-            }
-          }
-          break;
-
-        case SORTING_STATE::TRANSPORTING:
-          // If the conveyor has reached the top, start ejecting the donut by
-          // moving the conveyor in reverse.
-          if (conveyor.get_position() >= conveyor_stop_target) {
-            sorting_state = SORTING_STATE::EJECTING;
-            conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
-            // Offset the target position by the reversing distance.
-            conveyor_stop_target -= CONVEYOR_EJECT_DISTANCE;
-          }
-          break;
-
-        case SORTING_STATE::EJECTING:
-          // If the conveyor has reversed to target position, reset the sorting
-          // state and move the conveyor forward.
-          if (conveyor.get_position() <= conveyor_stop_target) {
-            sorting_state = SORTING_STATE::NOT_DETECTED;
-            conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
-          }
-          break;
-      }
-    } else {  // Otherwise, reset the sorting state.
-      sorting_state = SORTING_STATE::NOT_DETECTED;
-      conveyor_stop_target = 0;
-    }
-
     // Ladybrown snapping with PID.
     if (ladybrown_snapping) {
       int ladybrown_error =
@@ -527,7 +572,7 @@ void opcontrol() {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
       } else {  // Otherwise, use PID for the ladybrown's velocity.
-        ladybrown.move_velocity(ladybrown_pid.update(ladybrown_error));
+        ladybrown.move_velocity(-ladybrown_pid.update(ladybrown_error));
       }
     }
 
@@ -535,7 +580,7 @@ void opcontrol() {
     // of the slow refresh rate of the controller screen.
     if (!(frame_counter % 10)) {
       // controller.print(0, 0, "Score: %s",
-      //              scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
+      //                  scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
       controller.print(0, 0, "%d", potentiometer.get_value());
     }
 
