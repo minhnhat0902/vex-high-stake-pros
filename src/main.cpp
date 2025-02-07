@@ -199,28 +199,28 @@ lemlib::Drivetrain drivetrain(
 
 // Lateral motion controller.
 lemlib::ControllerSettings linearController(
-    10,   // proportional gain (kP)
-    0,    // integral gain (kI)
-    3,    // derivative gain (kD)
-    3,    // anti windup
-    1,    // small error range, in inches
+    15,   // proportional gain (kP)
+    0.1,  // integral gain (kI)
+    200,  // derivative gain (kD)
+    0,    // anti windup
+    0.2,  // small error range, in inches
     100,  // small error range timeout, in milliseconds
-    3,    // large error range, in inches
+    1,    // large error range, in inches
     500,  // large error range timeout, in milliseconds
-    20    // maximum acceleration (slew)
+    0     // maximum acceleration (slew)
 );
 
 // Angular motion controller.
 lemlib::ControllerSettings angularController(
-    2,    // proportional gain (kP)
-    0,    // integral gain (kI)
-    10,   // derivative gain (kD)
-    3,    // anti windup
-    1,    // small error range, in degrees
-    100,  // small error range timeout, in milliseconds
-    3,    // large error range, in degrees
-    500,  // large error range timeout, in milliseconds
-    0     // maximum acceleration (slew)
+    8,     // proportional gain (kP)
+    0.12,  // integral gain (kI)
+    80,    // derivative gain (kD)
+    0,     // anti windup
+    0.2,   // small error range, in degrees
+    100,   // small error range timeout, in milliseconds
+    1,     // large error range, in degrees
+    500,   // large error range timeout, in milliseconds
+    0      // maximum acceleration (slew)
 );
 
 // Sensors for odometry.
