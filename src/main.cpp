@@ -284,6 +284,11 @@ Selector turn_selector(controller,
                              "-105", "-90", "-45", "-30", "-15"},
                             0}});
 
+// AUTONOMOUS VARIABLES ----------------------------------------------------- //
+// Auton selector.
+Selector auton_selector(controller, {Key{"Alliance", {"Red", "Blue"}, 0},
+                                     Key{"Side", {"Neg", "Pos"}, 0}});
+
 /**
  * Runs when the center button on the LCD emulator display is pressed.
  */
@@ -447,23 +452,22 @@ void disabled() {}
  * This task will exit when the robot is enabled and autonomous or opcontrol
  * starts.
  */
-void competition_initialize() {}
+void competition_initialize() {
+  while (true) {
+    auton_selector.update();
+    auton_selector.display();
+    pros::delay(50);
+  }
+}
 
 /**
- * Runs the user autonomous code. This function will be started in its own task
- * with the default priority and stack size whenever the robot is enabled via
- * the Field Management System or the VEX Competition Switch in the autonomous
- * mode. Alternatively, this function may be called in initialize or opcontrol
- * for non-competition testing purposes.
+ * Autonomous program for red alliance on the side with the negative corner.
  *
- * If the robot is disabled or communications is lost, the autonomous task
- * will be stopped. Re-enabling the robot will restart the task, not re-start it
- * from where it left off.
+ * This program scores on the alliance stake, grabs a movable goal, collects
+ * donuts on the autonomous line, and then collects the donut on the stack
+ * nearby.
  */
-void autonomous() {
-  // Set the brake mode for Ladybrown.
-  ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
-
+void auton_red_neg() {
   // Alliance wall stake.
   ladybrown.move_velocity(200);
   pros::delay(500);
@@ -495,6 +499,140 @@ void autonomous() {
   chassis.turnToHeading(0, 5000, {}, false);
   pros::Task spin3([&] { motorSpin(200, 1000); });
   chassis.moveToPoint(-23.543, 41.712, 5000, {}, false);
+}
+
+/**
+ * Autonomous program for blue alliance on the side with the negative corner.
+ *
+ * This program scores on the alliance stake, grabs a movable goal, collects
+ * donuts on the autonomous line, and then collects the donut on the stack
+ * nearby.
+ */
+void auton_blue_neg() {
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
+
+  // Setting pose manually.
+  chassis.setPose(57.561, 12.525, 360 - 30);
+
+  // Grab goal.
+  chassis.moveToPoint(43.838, 35.72, 5000, {}, false);
+  chassis.turnToHeading(360 - 300, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(30.694, 28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
+
+  // Collect donuts on autonomous line.
+  chassis.turnToHeading(360 - 59.5, 5000, {}, false);
+  pros::Task spin1([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(9.432, 40.359, 5000, {}, false);
+  chassis.moveToPoint(15.424, 37.073, 5000, {forwards : false}, false);
+  chassis.turnToHeading(360 - 41, 5000, {}, false);
+  pros::Task spin2([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(7.886, 45.964, 5000, {}, false);
+
+  // Collect the other donut.
+  chassis.moveToPoint(23.543, 27.408, 5000, {forwards : false}, false);
+  chassis.turnToHeading(0, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(23.543, 41.712, 5000, {}, false);
+}
+
+/**
+ * Autonomous program for red alliance on the side with the positive corner.
+ *
+ * This program scores on the alliance stake, grabs a movable goal, and collects
+ * the donut on the stack nearby.
+ */
+void auton_red_pos() {
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
+
+  // Setting pose manually.
+  chassis.setPose(-57.561, -12.525, 150);
+
+  // Grab goal.
+  chassis.moveToPoint(-43.838, -35.72, 5000, {}, false);
+  chassis.turnToHeading(240, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(-30.694, -28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
+
+  // Collect the donut nearby.
+  chassis.turnToHeading(159.6, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-23.558, -47.038, 5000, {forwards : false}, false);
+}
+
+/**
+ * Autonomous program for blue alliance on the side with the positive corner.
+ *
+ * This program scores on the alliance stake, grabs a movable goal, and collects
+ * the donut on the stack nearby.
+ */
+void auton_blue_pos() {
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
+
+  // Setting pose manually.
+  chassis.setPose(57.561, -12.525, 360 - 150);
+
+  // Grab goal.
+  chassis.moveToPoint(43.838, -35.72, 5000, {}, false);
+  chassis.turnToHeading(360 - 240, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(30.694, -28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
+
+  // Collect the donut nearby.
+  chassis.turnToHeading(360 - 159.6, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(23.558, -47.038, 5000, {forwards : false}, false);
+}
+
+/**
+ * Runs the user autonomous code. This function will be started in its own task
+ * with the default priority and stack size whenever the robot is enabled via
+ * the Field Management System or the VEX Competition Switch in the autonomous
+ * mode. Alternatively, this function may be called in initialize or opcontrol
+ * for non-competition testing purposes.
+ *
+ * If the robot is disabled or communications is lost, the autonomous task
+ * will be stopped. Re-enabling the robot will restart the task, not re-start it
+ * from where it left off.
+ */
+void autonomous() {
+  // Set ladybrown brake mode to hold.
+  ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
+
+  // Get the selected alliance and side.
+  Key* alliance_key = &auton_selector.keys[0];
+  Key* side_key = &auton_selector.keys[1];
+  const std::string alliance = alliance_key->values[alliance_key->index];
+  const std::string side = side_key->values[side_key->index];
+
+  // Select the corresponding autonomous program.
+  if (alliance == "Red" && side == "Neg") {
+    auton_red_neg();
+  } else if (alliance == "Blue" && side == "Neg") {
+    auton_blue_neg();
+  } else if (alliance == "Red" && side == "Pos") {
+    auton_red_pos();
+  } else if (alliance == "Blue" && side == "Pos") {
+    auton_blue_pos();
+  }
 }
 
 /**
