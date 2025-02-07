@@ -169,11 +169,6 @@ pros::adi::AnalogIn potentiometer(POTENTIOMETER_PORT);
 // The current time in milliseconds.
 uint32_t now;
 
-// Importing the tarball asset
-ASSET(test_txt);  // '.' replaced with "_" to make c++ happy
-// Create a decoder for the tarball
-lemlib_tarball::Decoder decoder(test_txt);
-
 /**
  * Spins the conveyor and intake motors at a specified speed for a given
  * duration.
@@ -466,39 +461,40 @@ void competition_initialize() {}
  * from where it left off.
  */
 void autonomous() {
-  // Set the stopping point for Lady Brown
-  while (potentiometer.get_value() > 700) {
-    ladybrown.move_velocity(0);
-  }
-  // Set the brake mode for Lady Brown
+  // Set the brake mode for Ladybrown.
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 
-  // Setting pose manually
-  chassis.setPose({-57, -14, 325});
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
 
-  chassis.follow(decoder["path1"], 15, 2000, false);
-  chassis.follow(decoder["path2"], 15, 2000);
-  chassis.follow(decoder["path3"], 15, 2000);
-  chassis.follow(decoder["path4"], 15, 2000, false);
+  // Setting pose manually.
+  chassis.setPose(-57.561, 12.525, 30);
 
-  // Alliance wall stake
-  motorSpin(200, 2000);
+  // Grab goal.
+  chassis.moveToPoint(-43.838, 35.72, 5000, {}, false);
+  chassis.turnToHeading(300, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(-30.694, 28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
 
-  // chassis.follow(test_txt, 15, 4000);
-  //  Follow set path
-  while (true) {
-    lemlib::Pose pose = chassis.getPose();
-    if (pose.x >= -30 && pose.y >= -18) {
-      // TODO: Use PID to set to the angle
-      // moveToAngle(23.94);
-      intake.move_velocity(200) && conveyor.move_velocity(200);
-      pros::delay(2000);
-      intake.move_velocity(0) && conveyor.move_velocity(0);
-    }
-    // Update motors
-    // Delay to save resources
-    pros::delay(10);
-  }
+  // Collect donuts on autonomous line.
+  chassis.turnToHeading(59.5, 5000, {}, false);
+  pros::Task spin1([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-9.432, 40.359, 5000, {}, false);
+  chassis.moveToPoint(-15.424, 37.073, 5000, {forwards : false}, false);
+  chassis.turnToHeading(41, 5000, {}, false);
+  pros::Task spin2([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-7.886, 45.964, 5000, {}, false);
+
+  // Collect the other donut.
+  chassis.moveToPoint(-23.543, 27.408, 5000, {forwards : false}, false);
+  chassis.turnToHeading(0, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-23.543, 41.712, 5000, {}, false);
 }
 
 /**
