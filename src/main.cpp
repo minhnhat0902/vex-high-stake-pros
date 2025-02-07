@@ -54,7 +54,7 @@ const double CONVEYOR_TRANSPORT_SPEED_PERCENT = 75;
 
 /// @brief The speed of the ladybrown as a percentage of its max speed (200
 /// rpm).
-const double LADYBROWN_SPEED_PERCENT = 75;
+const double LADYBROWN_SPEED_PERCENT = 50;
 
 /// @brief Vision sensor signature ID for the red donut.
 const uint32_t RED_SIG_ID = 1;
