@@ -94,7 +94,7 @@ const double DISTANCE_VISION_TO_TOP = 520;
 
 /// @brief Position of the ladybrown at the top of the conveyor for pickup, in
 /// potentiometer units.
-const int LADYBROWN_PICKUP_POSITION = 1060;
+const int LADYBROWN_PICKUP_POSITION = 1880;
 
 /// @brief Acceptable error in the ladybrown position.
 const int LADYBROWN_EPSILON = 20;
