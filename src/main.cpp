@@ -699,7 +699,7 @@ void opcontrol() {
     if (!(frame_counter % 10)) {
       // controller.print(0, 0, "Score: %s",
       //                  scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
-      controller.print(0, 0, "%d", potentiometer.get_value());
+      controller.print(0, 0, "%05d", potentiometer.get_value_calibrated());
     }
 
     frame_counter++;
