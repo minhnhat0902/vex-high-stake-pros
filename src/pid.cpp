@@ -1,7 +1,7 @@
 #include "pid.hpp"
 
-PID::PID(double kP, double kI, double kD, double epsilon)
-    : KP(kP), KI(kI), KD(kD), EPSILON(epsilon) {}
+PID::PID(double kP, double kI, double kD)
+    : KP(kP), KI(kI), KD(kD), integral(0), last_error(0) {}
 
 double PID::update(double error) {
   // Reset the integral if the sign of the error changes.

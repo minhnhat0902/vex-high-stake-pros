@@ -2,10 +2,12 @@
 
 #include <atomic>
 
+#include "csv.hpp"
 #include "drivetrain.hpp"
 #include "lemlib-tarball/api.hpp"  // IWYU pragma: keep
 #include "lemlib/api.hpp"          // IWYU pragma: keep
 #include "pid.hpp"
+#include "selector.hpp"
 
 /// @brief Track width in mm.
 const double TRACK_WIDTH = 357.0;
@@ -52,7 +54,7 @@ const double CONVEYOR_TRANSPORT_SPEED_PERCENT = 75;
 
 /// @brief The speed of the ladybrown as a percentage of its max speed (200
 /// rpm).
-const double LADYBROWN_SPEED_PERCENT = 75;
+const double LADYBROWN_SPEED_PERCENT = 50;
 
 /// @brief Vision sensor signature ID for the red donut.
 const uint32_t RED_SIG_ID = 1;
@@ -83,7 +85,7 @@ const int CONVEYOR_OUT_TEETH = 12;
 const int CONVEYOR_LINKS = 74;
 
 /// @brief Offset in links between the first and second conveyor hooks.
-const int CONVEYOR_HOOK_2_OFFSET_LINKS = 31;
+const int CONVEYOR_HOOK_2_OFFSET_LINKS = 38;
 
 /// @brief Number of motor degrees for the conveyor to make a full revolution.
 const int CONVEYOR_REVOLUTION_DEGREES = double(CONVEYOR_LINKS) /
@@ -97,15 +99,19 @@ const int CONVEYOR_HOOK_2_OFFSET_DEGREES =
 
 /// @brief Distance in conveyor motor degrees needed to rotate a hook from the
 /// top of the conveyor to the vision sensor.
-const int DISTANCE_VISION_TO_TOP = 200;
+const int DISTANCE_VISION_TO_TOP = 360;
 
 /// @brief The error tolerance for hook positioning during vision sensor
 /// detection and transportation, in degrees of the conveyor motor.
 const int CONVEYOR_TOLERANCE = 50;
 
+/// @brief The distance in conveyor motor degrees for the conveyor to move
+/// forward for a cooldown after a wrong color donut has been ejected.
+const int CONVEYOR_COOLDOWN_DISTANCE = 200;
+
 /// @brief Position of the ladybrown at the top of the conveyor for pickup, in
 /// potentiometer units.
-const int LADYBROWN_PICKUP_POSITION = 1060;
+const int LADYBROWN_PICKUP_POSITION = 1880;
 
 /// @brief Acceptable error in the ladybrown position.
 const int LADYBROWN_EPSILON = 20;
@@ -142,7 +148,10 @@ enum class SORTING_STATE {
   /// detection range to the top of the conveyor.
   TRANSPORTING,
   /// @brief A donut of the wrong color is being ejected from the conveyor.
-  EJECTING
+  EJECTING,
+  /// @brief A donut is ejected from the conveyor, and the conveyor is moving
+  /// forward for a cooldown distance.
+  RECOVERING
 };
 
 // Initializing the controller, motors and sensors.
@@ -159,11 +168,6 @@ pros::adi::AnalogIn potentiometer(POTENTIOMETER_PORT);
 
 // The current time in milliseconds.
 uint32_t now;
-
-// Importing the tarball asset
-ASSET(test_txt);  // '.' replaced with "_" to make c++ happy
-// Create a decoder for the tarball
-lemlib_tarball::Decoder decoder(test_txt);
 
 /**
  * Spins the conveyor and intake motors at a specified speed for a given
@@ -190,28 +194,28 @@ lemlib::Drivetrain drivetrain(
 
 // Lateral motion controller.
 lemlib::ControllerSettings linearController(
-    10,   // proportional gain (kP)
-    0,    // integral gain (kI)
-    3,    // derivative gain (kD)
-    3,    // anti windup
-    1,    // small error range, in inches
+    15,   // proportional gain (kP)
+    0.1,  // integral gain (kI)
+    200,  // derivative gain (kD)
+    0,    // anti windup
+    0.2,  // small error range, in inches
     100,  // small error range timeout, in milliseconds
-    3,    // large error range, in inches
+    1,    // large error range, in inches
     500,  // large error range timeout, in milliseconds
-    20    // maximum acceleration (slew)
+    0     // maximum acceleration (slew)
 );
 
 // Angular motion controller.
 lemlib::ControllerSettings angularController(
-    2,    // proportional gain (kP)
-    0,    // integral gain (kI)
-    10,   // derivative gain (kD)
-    3,    // anti windup
-    1,    // small error range, in degrees
-    100,  // small error range timeout, in milliseconds
-    3,    // large error range, in degrees
-    500,  // large error range timeout, in milliseconds
-    0     // maximum acceleration (slew)
+    8,     // proportional gain (kP)
+    0.12,  // integral gain (kI)
+    80,    // derivative gain (kD)
+    0,     // anti windup
+    0.2,   // small error range, in degrees
+    100,   // small error range timeout, in milliseconds
+    1,     // large error range, in degrees
+    500,   // large error range timeout, in milliseconds
+    0      // maximum acceleration (slew)
 );
 
 // Sensors for odometry.
@@ -261,6 +265,35 @@ auto RED_SIG = pros::Vision::signature_from_utility(
 auto BLUE_SIG = pros::Vision::signature_from_utility(
     BLUE_SIG_ID, -4477, -3539, -4008, 51, 4449, 2250, 2.6, 0);
 
+// TESTING VARIABLES -------------------------------------------------------- //
+// Whether the robot is in testing mode.
+std::atomic<bool> is_testing = false;
+// Testing program selector.
+Selector program_selector(controller,
+                          {Key{"Program", {"Straight", "Turn"}, 0}});
+// Straight program selector.
+Selector straight_selector(controller,
+                           {Key{"Distance",
+                                {"12", "24", "36", "48", "60", "72", "-72",
+                                 "-60", "-48", "-36", "-24", "-12"},
+                                0}});
+// Turn program selector.
+Selector turn_selector(controller,
+                       {Key{"Angle",
+                            {"15", "30", "45", "90", "105", "120", "-120",
+                             "-105", "-90", "-45", "-30", "-15"},
+                            0}});
+
+// AUTONOMOUS VARIABLES ----------------------------------------------------- //
+// Auton selector.
+Selector auton_selector(controller, {Key{"Alliance", {"Red", "Blue"}, 0},
+                                     Key{"Side", {"Neg", "Pos"}, 0}});
+
+/**
+ * Runs when the center button on the LCD emulator display is pressed.
+ */
+void on_center_button() { is_testing = !is_testing; }
+
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  *
@@ -269,7 +302,8 @@ auto BLUE_SIG = pros::Vision::signature_from_utility(
  */
 void initialize() {
   pros::lcd::initialize();  // Initialize brain screen
-  chassis.calibrate();      // Calibrate sensors
+  pros::lcd::register_btn1_cb(on_center_button);
+  chassis.calibrate();  // Calibrate sensors
 
   now = pros::millis();
 
@@ -320,7 +354,8 @@ void initialize() {
                                                             : RED_SIG_ID);
 
             // Check if the donut is leaving the vision sensor's field of view.
-            if (visible_donut.left_coord < LEFT_EDGE_LIMIT) {
+            if (visible_donut.left_coord > LEFT_EDGE_LIMIT &&
+                visible_donut.left_coord < MIN_SCREEN_COVERAGE) {
               // The donut is now transporting to the top of the conveyor.
               sorting_state = SORTING_STATE::TRANSPORTING;
 
@@ -347,9 +382,9 @@ void initialize() {
                                        CONVEYOR_TOLERANCE;
               } else if (conveyor_offset >
                          CONVEYOR_REVOLUTION_DEGREES - CONVEYOR_TOLERANCE) {
-                // The detected hook is the second hook and it has not passed
+                // The detected hook is the first hook and it has not passed
                 // the standard detection position.
-                conveyor_stop_target = conveyor_offset - conveyor_offset +
+                conveyor_stop_target = conveyor_position - conveyor_offset +
                                        CONVEYOR_REVOLUTION_DEGREES +
                                        DISTANCE_VISION_TO_TOP -
                                        CONVEYOR_TOLERANCE;
@@ -370,7 +405,8 @@ void initialize() {
               sorting_state = SORTING_STATE::EJECTING;
               conveyor.move_velocity(-2 * CONVEYOR_SPEED_PERCENT);
               // Offset the target position by the reversing distance.
-              conveyor_stop_target -= CONVEYOR_EJECT_DISTANCE;
+              conveyor_stop_target -=
+                  (CONVEYOR_EJECT_DISTANCE - 2 * CONVEYOR_TOLERANCE);
             }
             break;
 
@@ -378,8 +414,18 @@ void initialize() {
             // If the conveyor has reversed to target position, reset the
             // sorting state and move the conveyor forward.
             if (conveyor.get_raw_position(&now) <= conveyor_stop_target) {
-              sorting_state = SORTING_STATE::NOT_DETECTED;
+              sorting_state = SORTING_STATE::RECOVERING;
               conveyor.move_velocity(2 * CONVEYOR_SPEED_PERCENT);
+              conveyor_stop_target +=
+                  (CONVEYOR_COOLDOWN_DISTANCE - 2 * CONVEYOR_TOLERANCE);
+            }
+            break;
+
+          case SORTING_STATE::RECOVERING:
+            // If the conveyor has reversed to target position, reset the
+            // sorting state and move the conveyor forward.
+            if (conveyor.get_raw_position(&now) >= conveyor_stop_target) {
+              sorting_state = SORTING_STATE::NOT_DETECTED;
               conveyor_stop_target = 0;
             }
             break;
@@ -406,7 +452,155 @@ void disabled() {}
  * This task will exit when the robot is enabled and autonomous or opcontrol
  * starts.
  */
-void competition_initialize() {}
+void competition_initialize() {
+  while (true) {
+    auton_selector.update();
+    auton_selector.display();
+    pros::delay(50);
+  }
+}
+
+/**
+ * Autonomous program for red alliance on the side with the negative corner.
+ *
+ * This program scores on the alliance stake, grabs a movable goal, collects
+ * donuts on the autonomous line, and then collects the donut on the stack
+ * nearby.
+ */
+void auton_red_neg() {
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
+
+  // Setting pose manually.
+  chassis.setPose(-57.561, 12.525, 30);
+
+  // Grab goal.
+  chassis.moveToPoint(-43.838, 35.72, 5000, {}, false);
+  chassis.turnToHeading(300, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(-30.694, 28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
+
+  // Collect donuts on autonomous line.
+  chassis.turnToHeading(59.5, 5000, {}, false);
+  pros::Task spin1([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-9.432, 40.359, 5000, {}, false);
+  chassis.moveToPoint(-15.424, 37.073, 5000, {forwards : false}, false);
+  chassis.turnToHeading(41, 5000, {}, false);
+  pros::Task spin2([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-7.886, 45.964, 5000, {}, false);
+
+  // Collect the other donut.
+  chassis.moveToPoint(-23.543, 27.408, 5000, {forwards : false}, false);
+  chassis.turnToHeading(0, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-23.543, 41.712, 5000, {}, false);
+}
+
+/**
+ * Autonomous program for blue alliance on the side with the negative corner.
+ *
+ * This program scores on the alliance stake, grabs a movable goal, collects
+ * donuts on the autonomous line, and then collects the donut on the stack
+ * nearby.
+ */
+void auton_blue_neg() {
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
+
+  // Setting pose manually.
+  chassis.setPose(57.561, 12.525, 360 - 30);
+
+  // Grab goal.
+  chassis.moveToPoint(43.838, 35.72, 5000, {}, false);
+  chassis.turnToHeading(360 - 300, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(30.694, 28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
+
+  // Collect donuts on autonomous line.
+  chassis.turnToHeading(360 - 59.5, 5000, {}, false);
+  pros::Task spin1([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(9.432, 40.359, 5000, {}, false);
+  chassis.moveToPoint(15.424, 37.073, 5000, {forwards : false}, false);
+  chassis.turnToHeading(360 - 41, 5000, {}, false);
+  pros::Task spin2([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(7.886, 45.964, 5000, {}, false);
+
+  // Collect the other donut.
+  chassis.moveToPoint(23.543, 27.408, 5000, {forwards : false}, false);
+  chassis.turnToHeading(0, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(23.543, 41.712, 5000, {}, false);
+}
+
+/**
+ * Autonomous program for red alliance on the side with the positive corner.
+ *
+ * This program scores on the alliance stake, grabs a movable goal, and collects
+ * the donut on the stack nearby.
+ */
+void auton_red_pos() {
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
+
+  // Setting pose manually.
+  chassis.setPose(-57.561, -12.525, 150);
+
+  // Grab goal.
+  chassis.moveToPoint(-43.838, -35.72, 5000, {}, false);
+  chassis.turnToHeading(240, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(-30.694, -28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
+
+  // Collect the donut nearby.
+  chassis.turnToHeading(159.6, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(-23.558, -47.038, 5000, {forwards : false}, false);
+}
+
+/**
+ * Autonomous program for blue alliance on the side with the positive corner.
+ *
+ * This program scores on the alliance stake, grabs a movable goal, and collects
+ * the donut on the stack nearby.
+ */
+void auton_blue_pos() {
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(500);
+  ladybrown.move_velocity(-200);
+  pros::delay(500);
+  ladybrown.move_velocity(0);
+
+  // Setting pose manually.
+  chassis.setPose(57.561, -12.525, 360 - 150);
+
+  // Grab goal.
+  chassis.moveToPoint(43.838, -35.72, 5000, {}, false);
+  chassis.turnToHeading(360 - 240, 5000, {}, false);
+  piston.set_value(true);
+  chassis.moveToPoint(30.694, -28.181, 5000, {forwards : false}, false);
+  piston.set_value(false);
+
+  // Collect the donut nearby.
+  chassis.turnToHeading(360 - 159.6, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 1000); });
+  chassis.moveToPoint(23.558, -47.038, 5000, {forwards : false}, false);
+}
 
 /**
  * Runs the user autonomous code. This function will be started in its own task
@@ -420,38 +614,24 @@ void competition_initialize() {}
  * from where it left off.
  */
 void autonomous() {
-  // Set the stopping point for Lady Brown
-  while (potentiometer.get_value() > 700) {
-    ladybrown.move_velocity(0);
-  }
-  // Set the brake mode for Lady Brown
+  // Set ladybrown brake mode to hold.
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 
-  // Setting pose manually
-  chassis.setPose({-57, -14, 325});
+  // Get the selected alliance and side.
+  Key* alliance_key = &auton_selector.keys[0];
+  Key* side_key = &auton_selector.keys[1];
+  const std::string alliance = alliance_key->values[alliance_key->index];
+  const std::string side = side_key->values[side_key->index];
 
-  chassis.follow(decoder["path1"], 15, 2000, false);
-  chassis.follow(decoder["path2"], 15, 2000);
-  chassis.follow(decoder["path3"], 15, 2000);
-  chassis.follow(decoder["path4"], 15, 2000, false);
-
-  // Alliance wall stake
-  motorSpin(200, 2000);
-
-  // chassis.follow(test_txt, 15, 4000);
-  //  Follow set path
-  while (true) {
-    lemlib::Pose pose = chassis.getPose();
-    if (pose.x >= -30 && pose.y >= -18) {
-      // TODO: Use PID to set to the angle
-      // moveToAngle(23.94);
-      intake.move_velocity(200) && conveyor.move_velocity(200);
-      pros::delay(2000);
-      intake.move_velocity(0) && conveyor.move_velocity(0);
-    }
-    // Update motors
-    // Delay to save resources
-    pros::delay(10);
+  // Select the corresponding autonomous program.
+  if (alliance == "Red" && side == "Neg") {
+    auton_red_neg();
+  } else if (alliance == "Blue" && side == "Neg") {
+    auton_blue_neg();
+  } else if (alliance == "Red" && side == "Pos") {
+    auton_red_pos();
+  } else if (alliance == "Blue" && side == "Pos") {
+    auton_blue_pos();
   }
 }
 
@@ -481,8 +661,11 @@ void opcontrol() {
   // of the conveyor.
   bool ladybrown_snapping = false;
   // PID controller for the ladybrown.
-  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD,
-                    LADYBROWN_EPSILON);
+  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD);
+
+  // TESTING VARIABLES ------------------------------------------------------ //
+  // Whether a testing program has been selected.
+  bool has_selected_program = false;
 
   // INITIALIZATION --------------------------------------------------------- //
   // Set the color signatures for the vision sensor.
@@ -497,6 +680,75 @@ void opcontrol() {
 
   // MAIN CONTROL LOOP ------------------------------------------------------ //
   while (true) {
+    if (is_testing.load()) {
+      if (!has_selected_program) {
+        // Select a testing program on controller A button.
+        if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+          has_selected_program = true;
+
+          pros::delay(200);
+
+          // Skip this iteration.
+          frame_counter++;
+          pros::delay(50);
+          continue;
+        }
+        
+        program_selector.update();
+        program_selector.display();
+      } else {
+        // Go back to the program selector on controller B button.
+        if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
+          has_selected_program = false;
+
+          pros::delay(200);
+
+          // Skip this iteration.
+          frame_counter++;
+          pros::delay(50);
+          continue;
+        }
+
+        switch (program_selector.get_current_key()->index) {
+          case 0:
+            // Run the straight program on controller A button.
+            if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+              Key* straight_key = straight_selector.get_current_key();
+              float distance =
+                  std::stof(straight_key->values[straight_key->index]);
+              chassis.setPose(0, 0, 0);
+              chassis.moveToPoint(0, distance, 100000,
+                                  {forwards : distance > 0}, false);
+
+              pros::delay(200);
+            }
+
+            straight_selector.update();
+            straight_selector.display();
+            break;
+          case 1:
+            // Run the turn program on controller A button.
+            if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+              Key* turn_key = turn_selector.get_current_key();
+              chassis.setPose(0, 0, 0);
+              chassis.turnToHeading(
+                  std::stof(turn_key->values[turn_key->index]), 10000, {},
+                  false);
+
+              pros::delay(200);
+            }
+
+            turn_selector.update();
+            turn_selector.display();
+            break;
+        }
+      }
+
+      frame_counter++;
+      pros::delay(50);  // Run for 50 ms then update
+      continue;
+    }
+
     // Tank control scheme.
     left_motors.move(int(
         pow(double(controller.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) * 127));
@@ -565,14 +817,14 @@ void opcontrol() {
     // Ladybrown snapping with PID.
     if (ladybrown_snapping) {
       int ladybrown_error =
-          potentiometer.get_value_calibrated() - LADYBROWN_PICKUP_POSITION;
+          LADYBROWN_PICKUP_POSITION - potentiometer.get_value_calibrated();
 
       // If the ladybrown is within the acceptable error, stop the motor.
       if (std::abs(ladybrown_error) < LADYBROWN_EPSILON) {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
       } else {  // Otherwise, use PID for the ladybrown's velocity.
-        ladybrown.move_velocity(-ladybrown_pid.update(ladybrown_error));
+        ladybrown.move(ladybrown_pid.update(ladybrown_error));
       }
     }
 
@@ -581,7 +833,7 @@ void opcontrol() {
     if (!(frame_counter % 10)) {
       // controller.print(0, 0, "Score: %s",
       //                  scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
-      controller.print(0, 0, "%d", potentiometer.get_value());
+      controller.print(0, 0, "%05d", potentiometer.get_value_calibrated());
     }
 
     frame_counter++;
