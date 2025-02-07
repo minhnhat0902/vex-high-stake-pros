@@ -41,8 +41,8 @@ class CSV {
   /// );
   /// ```
   CSV(const std::string& folder,
-             const std::initializer_list<std::string> headers = {},
-             const std::initializer_list<int> column_widths = {},
+             const std::initializer_list<std::string> headers,
+             const std::initializer_list<int> column_widths,
              int lines);
 
   /// @brief Destroy the CSV object.
