@@ -206,8 +206,7 @@ void opcontrol() {
   double conveyor_stop_target = 0;
 
   bool ladybrown_snapping = false;
-  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD,
-                    LADYBROWN_EPSILON);
+  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD);
 
   conveyor.tare_position();
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
@@ -333,7 +332,7 @@ void opcontrol() {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
       } else {
-        ladybrown.move_velocity(ladybrown_pid.update(ladybrown_error));
+        ladybrown.move(ladybrown_pid.update(ladybrown_error));
       }
     }
 
