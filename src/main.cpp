@@ -580,10 +580,11 @@ void opcontrol() {
             // Run the straight program on controller A button.
             if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
               Key* straight_key = straight_selector.get_current_key();
-              chassis.setPose({0, 0, 0});
-              chassis.moveToPose(
-                  0, std::stof(straight_key->values[straight_key->index]), 0,
-                  5000);
+              float distance =
+                  std::stof(straight_key->values[straight_key->index]);
+              chassis.setPose(0, 0, 0);
+              chassis.moveToPoint(0, distance, 100000,
+                                  {forwards : distance > 0}, false);
 
               pros::delay(200);
             }
@@ -595,9 +596,10 @@ void opcontrol() {
             // Run the turn program on controller A button.
             if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
               Key* turn_key = turn_selector.get_current_key();
-              chassis.setPose({0, 0, 0});
-              chassis.turnToHeading(std::stof(turn_key->values[turn_key->index]),
-                                    5000);
+              chassis.setPose(0, 0, 0);
+              chassis.turnToHeading(
+                  std::stof(turn_key->values[turn_key->index]), 10000, {},
+                  false);
 
               pros::delay(200);
             }
