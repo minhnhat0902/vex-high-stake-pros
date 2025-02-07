@@ -9,8 +9,10 @@ void Selector::update() {
   // Cycle through the keys with the controller left and right buttons.
   if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_LEFT)) {
     key_index--;
+    pros::delay(200);
   } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_RIGHT)) {
     key_index++;
+    pros::delay(200);
   }
 
   // Wrap around the keys.
@@ -21,8 +23,10 @@ void Selector::update() {
   // Cycle through the values with the controller up and down buttons.
   if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_UP)) {
     current_key->index++;
+    pros::delay(200);
   } else if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN)) {
     current_key->index--;
+    pros::delay(200);
   }
 
   // Wrap around the values.
