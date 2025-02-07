@@ -32,7 +32,7 @@ class Selector {
 
   /// @brief Returns the current selected key.
   /// @return The current selected key.
-  Key get_current_key();
+  Key* get_current_key();
 
   /// @brief Updates the selector and returns the current selected key.
   void update();
