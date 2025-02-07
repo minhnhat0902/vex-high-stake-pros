@@ -105,7 +105,7 @@ const int CONVEYOR_TOLERANCE = 50;
 
 /// @brief Position of the ladybrown at the top of the conveyor for pickup, in
 /// potentiometer units.
-const int LADYBROWN_PICKUP_POSITION = 1060;
+const int LADYBROWN_PICKUP_POSITION = 1880;
 
 /// @brief Acceptable error in the ladybrown position.
 const int LADYBROWN_EPSILON = 20;
@@ -481,8 +481,7 @@ void opcontrol() {
   // of the conveyor.
   bool ladybrown_snapping = false;
   // PID controller for the ladybrown.
-  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD,
-                    LADYBROWN_EPSILON);
+  PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD);
 
   // INITIALIZATION --------------------------------------------------------- //
   // Set the color signatures for the vision sensor.
@@ -565,14 +564,14 @@ void opcontrol() {
     // Ladybrown snapping with PID.
     if (ladybrown_snapping) {
       int ladybrown_error =
-          potentiometer.get_value_calibrated() - LADYBROWN_PICKUP_POSITION;
+          LADYBROWN_PICKUP_POSITION - potentiometer.get_value_calibrated();
 
       // If the ladybrown is within the acceptable error, stop the motor.
       if (std::abs(ladybrown_error) < LADYBROWN_EPSILON) {
         ladybrown_snapping = false;
         ladybrown.move_velocity(0);
       } else {  // Otherwise, use PID for the ladybrown's velocity.
-        ladybrown.move_velocity(-ladybrown_pid.update(ladybrown_error));
+        ladybrown.move(ladybrown_pid.update(ladybrown_error));
       }
     }
 

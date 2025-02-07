@@ -5,9 +5,6 @@
 #include "main.h"
 
 class PID {
-  /// @brief The maximum error tolerance of the PID controller.
-  const double EPSILON;
-
   /// @brief The proportional coefficient of the PID controller.
   const double KP;
 
@@ -29,7 +26,6 @@ class PID {
   /// @param kP The proportional coefficient.
   /// @param kI The integral coefficient.
   /// @param kD The derivative coefficient.
-  /// @param epsilon The maximum error tolerance.
   ///
   /// # Example:
   ///
@@ -41,7 +37,7 @@ class PID {
   ///   0.1, // epsilon
   /// );
   /// ```
-  PID(double kP, double kI, double kD, double epsilon);
+  PID(double kP, double kI, double kD);
 
   /// @brief Updates the PID controller.
   ///
