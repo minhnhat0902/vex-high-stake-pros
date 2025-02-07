@@ -2,10 +2,12 @@
 
 #include <atomic>
 
+#include "csv.hpp"
 #include "drivetrain.hpp"
 #include "lemlib-tarball/api.hpp"  // IWYU pragma: keep
 #include "lemlib/api.hpp"          // IWYU pragma: keep
 #include "pid.hpp"
+#include "selector.hpp"
 
 /// @brief Track width in mm.
 const double TRACK_WIDTH = 357.0;
@@ -261,6 +263,30 @@ auto RED_SIG = pros::Vision::signature_from_utility(
 auto BLUE_SIG = pros::Vision::signature_from_utility(
     BLUE_SIG_ID, -4477, -3539, -4008, 51, 4449, 2250, 2.6, 0);
 
+// TESTING VARIABLES -------------------------------------------------------- //
+// Whether the robot is in testing mode.
+std::atomic<bool> is_testing = false;
+// Testing program selector.
+Selector program_selector(controller,
+                          {Key{"Program", {"Straight", "Turn"}, 0}});
+// Straight program selector.
+Selector straight_selector(controller,
+                           {Key{"Distance",
+                                {"12", "24", "36", "48", "60", "72", "-72",
+                                 "-60", "-48", "-36", "-24", "-12"},
+                                0}});
+// Turn program selector.
+Selector turn_selector(controller,
+                       {Key{"Angle",
+                            {"15", "30", "45", "90", "105", "120", "-120",
+                             "-105", "-90", "-45", "-30", "-15"},
+                            0}});
+
+/**
+ * Runs when the center button on the LCD emulator display is pressed.
+ */
+void on_center_button() { is_testing = !is_testing; }
+
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  *
@@ -269,7 +295,8 @@ auto BLUE_SIG = pros::Vision::signature_from_utility(
  */
 void initialize() {
   pros::lcd::initialize();  // Initialize brain screen
-  chassis.calibrate();      // Calibrate sensors
+  pros::lcd::register_btn1_cb(on_center_button);
+  chassis.calibrate();  // Calibrate sensors
 
   now = pros::millis();
 
@@ -484,6 +511,10 @@ void opcontrol() {
   PID ladybrown_pid(LADYBROWN_KP, LADYBROWN_KI, LADYBROWN_KD,
                     LADYBROWN_EPSILON);
 
+  // TESTING VARIABLES ------------------------------------------------------ //
+  // Whether a testing program has been selected.
+  bool has_selected_program = false;
+
   // INITIALIZATION --------------------------------------------------------- //
   // Set the color signatures for the vision sensor.
   vision_sensor.set_signature(RED_SIG_ID, &RED_SIG);
@@ -497,6 +528,73 @@ void opcontrol() {
 
   // MAIN CONTROL LOOP ------------------------------------------------------ //
   while (true) {
+    if (is_testing.load()) {
+      if (!has_selected_program) {
+        // Select a testing program on controller A button.
+        if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+          has_selected_program = true;
+
+          pros::delay(200);
+
+          // Skip this iteration.
+          frame_counter++;
+          pros::delay(50);
+          continue;
+        }
+        
+        program_selector.update();
+        program_selector.display();
+      } else {
+        // Go back to the program selector on controller B button.
+        if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
+          has_selected_program = false;
+
+          pros::delay(200);
+
+          // Skip this iteration.
+          frame_counter++;
+          pros::delay(50);
+          continue;
+        }
+
+        switch (program_selector.get_current_key()->index) {
+          case 0:
+            // Run the straight program on controller A button.
+            if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+              Key* straight_key = straight_selector.get_current_key();
+              chassis.setPose({0, 0, 0});
+              chassis.moveToPose(
+                  0, std::stof(straight_key->values[straight_key->index]), 0,
+                  5000);
+
+              pros::delay(200);
+            }
+
+            straight_selector.update();
+            straight_selector.display();
+            break;
+          case 1:
+            // Run the turn program on controller A button.
+            if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_A)) {
+              Key* turn_key = turn_selector.get_current_key();
+              chassis.setPose({0, 0, 0});
+              chassis.turnToHeading(std::stof(turn_key->values[turn_key->index]),
+                                    5000);
+
+              pros::delay(200);
+            }
+
+            turn_selector.update();
+            turn_selector.display();
+            break;
+        }
+      }
+
+      frame_counter++;
+      pros::delay(50);  // Run for 50 ms then update
+      continue;
+    }
+
     // Tank control scheme.
     left_motors.move(int(
         pow(double(controller.get_analog(ANALOG_LEFT_Y)) / 127, 3.0) * 127));
