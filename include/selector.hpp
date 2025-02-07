@@ -10,7 +10,7 @@ struct Key {
   std::string name;
   /// @brief The list of values for the key.
   std::vector<std::string> values;
-  /// @brief The current index of the key. 
+  /// @brief The current index of the key.
   int index;
 };
 
@@ -28,7 +28,7 @@ class Selector {
   /// @brief Constructor for the Selector class.
   /// @param controller The controller object to use for the selector.
   /// @param keys The list of keys for the selector.
-  Selector(pros::Controller controller, std::initializer_list<Key>& keys);
+  Selector(pros::v5::Controller controller, std::initializer_list<Key> keys);
 
   /// @brief Returns the current selected key.
   /// @return The current selected key.

@@ -1,7 +1,7 @@
 #include "selector.hpp"
 
 Selector::Selector(pros::Controller controller,
-                   std::initializer_list<Key>& keys)
+                   std::initializer_list<Key> keys)
     : controller(controller), keys(keys), key_index(0) {}
 
 Key Selector::get_current_key() { return keys[key_index]; }

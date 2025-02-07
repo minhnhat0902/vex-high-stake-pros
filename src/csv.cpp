@@ -5,8 +5,8 @@
 #include <numeric>
 
 CSV::CSV(const std::string& folder,
-         const std::initializer_list<std::string>& headers,
-         const std::initializer_list<int>& column_widths, int lines)
+         const std::initializer_list<std::string> headers,
+         const std::initializer_list<int> column_widths, int lines)
     : folder(folder),
       headers(headers),
       column_widths(column_widths),
