@@ -891,9 +891,7 @@ void opcontrol() {
     // Print the potentiometer value to the controller every 10 frames because
     // of the slow refresh rate of the controller screen.
     if (!(frame_counter % 10)) {
-      // controller.print(0, 0, "Score: %s",
-      //                  scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
-      controller.print(0, 0, "%05d", potentiometer.get_value_calibrated());
+      controller.print(0, 0, "Piston: %s", extended ? "IN " : "OUT");
     }
 
     frame_counter++;
