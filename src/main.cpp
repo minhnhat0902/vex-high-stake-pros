@@ -30,8 +30,8 @@ const std::int8_t INTAKE_PORT = -6;
 /// @brief Conveyor motor port number.
 const std::int8_t CONVEYOR_PORT = -7;
 
-/// @brief Ladybrown motor port number.
-const std::int8_t LADYBROWN_PORT = 9;
+/// @brief Ladybrown motors port numbers.
+const std::initializer_list<std::int8_t> LADYBROWN_PORTS = {-8, 9};
 
 /// @brief Port number for the vision sensor.
 const uint8_t VISION_PORT = 8;
@@ -168,7 +168,7 @@ pros::MotorGroup left_motors(LEFT_MOTORS_PORT);
 pros::MotorGroup right_motors(RIGHT_MOTORS_PORT);
 pros::Motor intake(INTAKE_PORT);
 pros::Motor conveyor(CONVEYOR_PORT);
-pros::Motor ladybrown(LADYBROWN_PORT);
+pros::MotorGroup ladybrown(LADYBROWN_PORTS);
 pros::Vision vision_sensor(VISION_PORT);
 pros::Imu imu(INERTIAL_PORT);
 pros::adi::DigitalOut piston(PISTON_PORT);
