@@ -30,8 +30,8 @@ const std::int8_t INTAKE_PORT = -6;
 /// @brief Conveyor motor port number.
 const std::int8_t CONVEYOR_PORT = -7;
 
-/// @brief Ladybrown motor port number.
-const std::int8_t LADYBROWN_PORT = 9;
+/// @brief Ladybrown motors port numbers.
+const std::initializer_list<std::int8_t> LADYBROWN_PORTS = {-8, 9};
 
 /// @brief Port number for the vision sensor.
 const uint8_t VISION_PORT = 8;
@@ -54,7 +54,7 @@ const double CONVEYOR_TRANSPORT_SPEED_PERCENT = 75;
 
 /// @brief The speed of the ladybrown as a percentage of its max speed (200
 /// rpm).
-const double LADYBROWN_SPEED_PERCENT = 50;
+const double LADYBROWN_SPEED_PERCENT = 75;
 
 /// @brief Vision sensor signature ID for the red donut.
 const uint32_t RED_SIG_ID = 1;
@@ -125,6 +125,14 @@ const double LADYBROWN_KI = 0.0;
 /// @brief The derivative coefficient of the ladybrown PID controller.
 const double LADYBROWN_KD = 0.0;
 
+// AUTONOMOUS CONSTANTS ----------------------------------------------------- //
+/// @brief Whether to use curve path for autonomous movement.
+const bool USE_CURVE_PATH = true;
+
+/// @brief Whether to reach donuts on the autonomous line during negative-side
+/// autononomous program.
+const bool REACH_LINE_DONUTS = false;
+
 /// @brief Enum for the colors of the donuts.
 enum class DONUT_COLOR { RED, BLUE };
 
@@ -160,7 +168,7 @@ pros::MotorGroup left_motors(LEFT_MOTORS_PORT);
 pros::MotorGroup right_motors(RIGHT_MOTORS_PORT);
 pros::Motor intake(INTAKE_PORT);
 pros::Motor conveyor(CONVEYOR_PORT);
-pros::Motor ladybrown(LADYBROWN_PORT);
+pros::MotorGroup ladybrown(LADYBROWN_PORTS);
 pros::Vision vision_sensor(VISION_PORT);
 pros::Imu imu(INERTIAL_PORT);
 pros::adi::DigitalOut piston(PISTON_PORT);
@@ -244,6 +252,12 @@ lemlib::ExpoDriveCurve steerCurve(
 // Create the chassis.
 lemlib::Chassis chassis(drivetrain, linearController, angularController,
                         sensors, &throttleCurve, &steerCurve);
+
+// Path assets for autonomous curve movement.
+ASSET(red_neg_goal_curve_txt);
+ASSET(blue_neg_goal_curve_txt);
+ASSET(red_pos_goal_curve_txt);
+ASSET(blue_pos_goal_curve_txt);
 
 // CONVEYOR VARIABLES ----------------------------------------------------- //
 // The state of the conveyor motor.
@@ -468,37 +482,51 @@ void competition_initialize() {
  * nearby.
  */
 void auton_red_neg() {
-  // Alliance wall stake.
-  ladybrown.move_velocity(200);
-  pros::delay(500);
-  ladybrown.move_velocity(-200);
-  pros::delay(500);
-  ladybrown.move_velocity(0);
-
   // Setting pose manually.
-  chassis.setPose(-57.561, 12.525, 30);
+  chassis.setPose(-57.561, 12.525, 210);
 
   // Grab goal.
-  chassis.moveToPoint(-43.838, 35.72, 5000, {}, false);
-  chassis.turnToHeading(300, 5000, {}, false);
-  piston.set_value(true);
-  chassis.moveToPoint(-30.694, 28.181, 5000, {forwards : false}, false);
-  piston.set_value(false);
+  if (USE_CURVE_PATH) {  // Use curve path.
+    // Extend the piston, then follow curve path reach the goal.
+    piston.set_value(true);
+    chassis.follow(red_neg_goal_curve_txt, 5, 3000, false, false);
+  } else {  // Use straight paths with a turn.
+    // Line up with the goal's edge.
+    chassis.moveToPoint(-43.838, 35.72, 5000, {forwards : false, maxSpeed : 80},
+                        false);
+    chassis.turnToHeading(300, 5000, {}, false);
+    // Extend the piston.
+    piston.set_value(true);
+    // Reach the goal.
+    chassis.moveToPoint(-30.694, 28.181, 5000, {forwards : false}, false);
+    chassis.moveToPoint(-23.543, 22.963, 5000,
+                        {forwards : false, maxSpeed : 50}, false);
+  }
 
-  // Collect donuts on autonomous line.
-  chassis.turnToHeading(59.5, 5000, {}, false);
-  pros::Task spin1([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(-9.432, 40.359, 5000, {}, false);
-  chassis.moveToPoint(-15.424, 37.073, 5000, {forwards : false}, false);
-  chassis.turnToHeading(41, 5000, {}, false);
-  pros::Task spin2([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(-7.886, 45.964, 5000, {}, false);
+  piston.set_value(false);  // Retract the piston.
+  pros::delay(100);         // Wait for the piston to grab fully.
+
+  if (REACH_LINE_DONUTS) {
+    // Collect donuts on autonomous line.
+    chassis.turnToHeading(59.5, 5000, {}, false);
+    pros::Task spin1([&] { motorSpin(200, 1000); });
+    chassis.moveToPoint(-9.432, 40.359, 5000, {maxSpeed : 80}, false);
+    chassis.moveToPoint(-15.424, 37.073, 5000, {forwards : false}, false);
+    chassis.turnToHeading(41, 5000, {}, false);
+    pros::Task spin2([&] { motorSpin(200, 1000); });
+    chassis.moveToPoint(-7.886, 45.964, 5000, {maxSpeed : 80}, false);
+    chassis.moveToPoint(-23.543, 27.408, 5000,
+                        {forwards : false, maxSpeed : 80}, false);
+  }
 
   // Collect the other donut.
-  chassis.moveToPoint(-23.543, 27.408, 5000, {forwards : false}, false);
   chassis.turnToHeading(0, 5000, {}, false);
-  pros::Task spin3([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(-23.543, 41.712, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 10000); });
+  chassis.moveToPoint(-23.543, 45.384, 5000, {maxSpeed : 80}, false);
+
+  // Touch ladder.
+  chassis.turnToHeading(180, 5000, {}, false);
+  chassis.moveToPoint(-23.543, 10.012, 5000, {maxSpeed : 80}, false);
 }
 
 /**
@@ -509,37 +537,51 @@ void auton_red_neg() {
  * nearby.
  */
 void auton_blue_neg() {
-  // Alliance wall stake.
-  ladybrown.move_velocity(200);
-  pros::delay(500);
-  ladybrown.move_velocity(-200);
-  pros::delay(500);
-  ladybrown.move_velocity(0);
-
   // Setting pose manually.
-  chassis.setPose(57.561, 12.525, 360 - 30);
+  chassis.setPose(57.561, 12.525, 360 - 210);
 
   // Grab goal.
-  chassis.moveToPoint(43.838, 35.72, 5000, {}, false);
-  chassis.turnToHeading(360 - 300, 5000, {}, false);
-  piston.set_value(true);
-  chassis.moveToPoint(30.694, 28.181, 5000, {forwards : false}, false);
-  piston.set_value(false);
+  if (USE_CURVE_PATH) {  // Use curve path.
+    // Extend the piston, then follow curve path reach the goal.
+    piston.set_value(true);
+    chassis.follow(blue_neg_goal_curve_txt, 5, 3000, false, false);
+  } else {  // Use straight paths with a turn.
+    // Line up with the goal's edge.
+    chassis.moveToPoint(43.838, 35.72, 5000, {forwards : false, maxSpeed : 80},
+                        false);
+    chassis.turnToHeading(360 - 300, 5000, {}, false);
+    // Extend the piston.
+    piston.set_value(true);
+    // Reach the goal.
+    chassis.moveToPoint(30.694, 28.181, 5000, {forwards : false}, false);
+    chassis.moveToPoint(23.543, 22.963, 5000, {forwards : false, maxSpeed : 50},
+                        false);
+  }
 
-  // Collect donuts on autonomous line.
-  chassis.turnToHeading(360 - 59.5, 5000, {}, false);
-  pros::Task spin1([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(9.432, 40.359, 5000, {}, false);
-  chassis.moveToPoint(15.424, 37.073, 5000, {forwards : false}, false);
-  chassis.turnToHeading(360 - 41, 5000, {}, false);
-  pros::Task spin2([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(7.886, 45.964, 5000, {}, false);
+  piston.set_value(false);  // Retract the piston.
+  pros::delay(100);         // Wait for the piston to grab fully.
+
+  if (REACH_LINE_DONUTS) {
+    // Collect donuts on autonomous line.
+    chassis.turnToHeading(360 - 59.5, 5000, {}, false);
+    pros::Task spin1([&] { motorSpin(200, 1000); });
+    chassis.moveToPoint(9.432, 40.359, 5000, {maxSpeed : 80}, false);
+    chassis.moveToPoint(15.424, 37.073, 5000, {forwards : false}, false);
+    chassis.turnToHeading(360 - 41, 5000, {}, false);
+    pros::Task spin2([&] { motorSpin(200, 1000); });
+    chassis.moveToPoint(7.886, 45.964, 5000, {maxSpeed : 80}, false);
+    chassis.moveToPoint(23.543, 27.408, 5000, {forwards : false, maxSpeed : 80},
+                        false);
+  }
 
   // Collect the other donut.
-  chassis.moveToPoint(23.543, 27.408, 5000, {forwards : false}, false);
   chassis.turnToHeading(0, 5000, {}, false);
-  pros::Task spin3([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(23.543, 41.712, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 10000); });
+  chassis.moveToPoint(23.543, 45.384, 5000, {maxSpeed : 80}, false);
+
+  // Touch ladder.
+  chassis.turnToHeading(360 - 180, 5000, {}, false);
+  chassis.moveToPoint(23.543, 10.012, 5000, {maxSpeed : 80}, false);
 }
 
 /**
@@ -549,27 +591,38 @@ void auton_blue_neg() {
  * the donut on the stack nearby.
  */
 void auton_red_pos() {
-  // Alliance wall stake.
-  ladybrown.move_velocity(200);
-  pros::delay(500);
-  ladybrown.move_velocity(-200);
-  pros::delay(500);
-  ladybrown.move_velocity(0);
-
   // Setting pose manually.
-  chassis.setPose(-57.561, -12.525, 150);
+  chassis.setPose(-57.561, -12.525, 330);
 
   // Grab goal.
-  chassis.moveToPoint(-43.838, -35.72, 5000, {}, false);
-  chassis.turnToHeading(240, 5000, {}, false);
-  piston.set_value(true);
-  chassis.moveToPoint(-30.694, -28.181, 5000, {forwards : false}, false);
-  piston.set_value(false);
+  if (USE_CURVE_PATH) {  // Use curve path.
+    // Extend the piston, then follow curve path reach the goal.
+    piston.set_value(true);
+    chassis.follow(red_pos_goal_curve_txt, 5, 3000, false, false);
+  } else {  // Use straight paths with a turn.
+    // Line up with the goal's edge.
+    chassis.moveToPoint(-43.838, -35.72, 5000,
+                        {forwards : false, maxSpeed : 80}, false);
+    chassis.turnToHeading(240, 5000, {}, false);
+    // Extend the piston.
+    piston.set_value(true);
+    // Reach the goal.
+    chassis.moveToPoint(-30.694, -28.181, 5000, {forwards : false}, false);
+    chassis.moveToPoint(-23.558, -44.688, 5000,
+                        {forwards : false, maxSpeed : 50}, false);
+  }
+
+  piston.set_value(false);  // Retract the piston.
+  pros::delay(100);         // Wait for the piston to grab fully.
 
   // Collect the donut nearby.
-  chassis.turnToHeading(159.6, 5000, {}, false);
-  pros::Task spin3([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(-23.558, -47.038, 5000, {forwards : false}, false);
+  chassis.turnToHeading(180, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 10000); });
+  chassis.moveToPoint(-23.558, -44.688, 5000, {maxSpeed : 80}, false);
+
+  // Touch ladder.
+  chassis.turnToHeading(0, 5000, {}, false);
+  chassis.moveToPoint(-23.558, -10.012, 5000, {maxSpeed : 80}, false);
 }
 
 /**
@@ -579,27 +632,38 @@ void auton_red_pos() {
  * the donut on the stack nearby.
  */
 void auton_blue_pos() {
-  // Alliance wall stake.
-  ladybrown.move_velocity(200);
-  pros::delay(500);
-  ladybrown.move_velocity(-200);
-  pros::delay(500);
-  ladybrown.move_velocity(0);
-
   // Setting pose manually.
-  chassis.setPose(57.561, -12.525, 360 - 150);
+  chassis.setPose(57.561, -12.525, 360 - 330);
 
   // Grab goal.
-  chassis.moveToPoint(43.838, -35.72, 5000, {}, false);
-  chassis.turnToHeading(360 - 240, 5000, {}, false);
-  piston.set_value(true);
-  chassis.moveToPoint(30.694, -28.181, 5000, {forwards : false}, false);
-  piston.set_value(false);
+  if (USE_CURVE_PATH) {  // Use curve path.
+    // Extend the piston, then follow curve path reach the goal.
+    piston.set_value(true);
+    chassis.follow(blue_pos_goal_curve_txt, 5, 3000, false, false);
+  } else {  // Use straight paths with a turn.
+    // Line up with the goal's edge.
+    chassis.moveToPoint(43.838, -35.72, 5000,
+                        {forwards : false, maxSpeed : 80}, false);
+    chassis.turnToHeading(360 - 240, 5000, {}, false);
+    // Extend the piston.
+    piston.set_value(true);
+    // Reach the goal.
+    chassis.moveToPoint(30.694, -28.181, 5000, {forwards : false}, false);
+    chassis.moveToPoint(23.558, -44.688, 5000,
+                        {forwards : false, maxSpeed : 50}, false);
+  }
+
+  piston.set_value(false);  // Retract the piston.
+  pros::delay(100);         // Wait for the piston to grab fully.
 
   // Collect the donut nearby.
-  chassis.turnToHeading(360 - 159.6, 5000, {}, false);
-  pros::Task spin3([&] { motorSpin(200, 1000); });
-  chassis.moveToPoint(23.558, -47.038, 5000, {forwards : false}, false);
+  chassis.turnToHeading(360 - 180, 5000, {}, false);
+  pros::Task spin3([&] { motorSpin(200, 10000); });
+  chassis.moveToPoint(23.558, -44.688, 5000, {maxSpeed : 80}, false);
+
+  // Touch ladder.
+  chassis.turnToHeading(0, 5000, {}, false);
+  chassis.moveToPoint(23.558, -10.012, 5000, {maxSpeed : 80}, false);
 }
 
 /**
@@ -617,22 +681,18 @@ void autonomous() {
   // Set ladybrown brake mode to hold.
   ladybrown.set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
 
-  // Get the selected alliance and side.
-  Key* alliance_key = &auton_selector.keys[0];
-  Key* side_key = &auton_selector.keys[1];
-  const std::string alliance = alliance_key->values[alliance_key->index];
-  const std::string side = side_key->values[side_key->index];
+  // Alliance wall stake.
+  ladybrown.move_velocity(200);
+  pros::delay(600);
+  pros::Task retreat([&]() {
+    pros::delay(50);
+    ladybrown.move_velocity(-200);
+    pros::delay(600);
+    ladybrown.move_velocity(0);
+  });
 
-  // Select the corresponding autonomous program.
-  if (alliance == "Red" && side == "Neg") {
-    auton_red_neg();
-  } else if (alliance == "Blue" && side == "Neg") {
-    auton_blue_neg();
-  } else if (alliance == "Red" && side == "Pos") {
-    auton_red_pos();
-  } else if (alliance == "Blue" && side == "Pos") {
-    auton_blue_pos();
-  }
+  // Run an autonomous program function.
+  auton_red_neg();
 }
 
 /**
@@ -653,8 +713,8 @@ void opcontrol() {
   int frame_counter = 0;
 
   // PISTON VARIABLES ------------------------------------------------------- //
-  // Whether the piston is retracted.
-  bool retracted = false;
+  // Whether the piston is extended.
+  bool extended = false;
 
   // LADYBROWN VARIABLES ---------------------------------------------------- //
   // Whether the ladybrown is currently snapping to pickup position at the top
@@ -693,7 +753,7 @@ void opcontrol() {
           pros::delay(50);
           continue;
         }
-        
+
         program_selector.update();
         program_selector.display();
       } else {
@@ -786,13 +846,13 @@ void opcontrol() {
 
     // Toggle piston state with the controller B button.
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
-      if (retracted) {
+      if (extended) {
         piston.set_value(0);
-        retracted = false;
+        extended = false;
         pros::delay(200);
       } else {
         piston.set_value(1);
-        retracted = true;
+        extended = true;
         pros::delay(200);
       }
     }
@@ -831,9 +891,7 @@ void opcontrol() {
     // Print the potentiometer value to the controller every 10 frames because
     // of the slow refresh rate of the controller screen.
     if (!(frame_counter % 10)) {
-      // controller.print(0, 0, "Score: %s",
-      //                  scoring_color == DONUT_COLOR::RED ? "RED " : "BLUE");
-      controller.print(0, 0, "%05d", potentiometer.get_value_calibrated());
+      controller.print(0, 0, "Piston: %s", extended ? "IN " : "OUT");
     }
 
     frame_counter++;
