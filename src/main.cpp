@@ -713,8 +713,8 @@ void opcontrol() {
   int frame_counter = 0;
 
   // PISTON VARIABLES ------------------------------------------------------- //
-  // Whether the piston is retracted.
-  bool retracted = false;
+  // Whether the piston is extended.
+  bool extended = false;
 
   // LADYBROWN VARIABLES ---------------------------------------------------- //
   // Whether the ladybrown is currently snapping to pickup position at the top
@@ -846,13 +846,13 @@ void opcontrol() {
 
     // Toggle piston state with the controller B button.
     if (controller.get_digital(pros::E_CONTROLLER_DIGITAL_B)) {
-      if (retracted) {
+      if (extended) {
         piston.set_value(0);
-        retracted = false;
+        extended = false;
         pros::delay(200);
       } else {
         piston.set_value(1);
-        retracted = true;
+        extended = true;
         pros::delay(200);
       }
     }
